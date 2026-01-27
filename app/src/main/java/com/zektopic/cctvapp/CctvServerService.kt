@@ -71,6 +71,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         layoutParams.gravity = Gravity.TOP or Gravity.START
         windowManager.addView(openGlView, layoutParams)
         openGlView.holder.addCallback(this)
+        openGlView.holder.setFixedSize(640, 480) // Ensure valid surface size
 
         webServer = WebServer(this, getIpAddress()) {
             currentSnapshot.get()
@@ -104,7 +105,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        useH265 = intent?.getBooleanExtra("use_h265", false) ?: false
+        val newUseH265 = intent?.getBooleanExtra("use_h265", false) ?: false
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CCTV Server")
@@ -117,10 +118,24 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        if (::rtspServerCamera1.isInitialized && rtspServerCamera1.isStreaming) {
-            rtspServerCamera1.stopStream()
+        // Initialize wrapper if needed
+        if (!::rtspServerCamera1.isInitialized) {
+             rtspServerCamera1 = RtspServerCamera1(openGlView, this, 8554)
+        }
+
+        // If already streaming, check if we need to restart due to config change
+        if (rtspServerCamera1.isStreaming) {
+            if (useH265 != newUseH265) {
+                rtspServerCamera1.stopStream()
+                // Proceed to start stream with new config
+            } else {
+                // Already streaming with correct config, ignore
+                return START_STICKY
+            }
         }
         
+        useH265 = newUseH265
+
         if (isSurfaceCreated) {
             startStream()
         }
