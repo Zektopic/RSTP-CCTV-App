@@ -36,6 +36,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private val NOTIFICATION_ID = 1
     private val CHANNEL_ID = "CctvServerChannel"
     private var isSurfaceCreated = false
+    private var videoWidth = 640
+    private var videoHeight = 480
     private var useH265 = false
     private val currentSnapshot = AtomicReference<ByteArray>(null)
     private val snapshotHandler = Handler(Looper.getMainLooper())
@@ -73,11 +75,55 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.holder.addCallback(this)
         openGlView.holder.setFixedSize(640, 480) // Ensure valid surface size
 
-        webServer = WebServer(this, getIpAddress()) {
-            currentSnapshot.get()
-        }
+        webServer = WebServer(this, getIpAddress(), 
+            imageProvider = { currentSnapshot.get() },
+            onSwitchCamera = {
+                if (::rtspServerCamera1.isInitialized) {
+                    try {
+                        rtspServerCamera1.switchCamera()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            },
+            onStartStream = {
+                if (isSurfaceCreated && (!::rtspServerCamera1.isInitialized || !rtspServerCamera1.isStreaming)) {
+                    startStream()
+                }
+            },
+            onStopStream = {
+                if (::rtspServerCamera1.isInitialized && rtspServerCamera1.isStreaming) {
+                    rtspServerCamera1.stopStream()
+                }
+            },
+            isStreaming = {
+                if (::rtspServerCamera1.isInitialized) rtspServerCamera1.isStreaming else false
+            },
+            onCodecUpdate = { enableH265 ->
+                if (useH265 != enableH265) {
+                    useH265 = enableH265
+                    // Restart stream with new codec if running
+                    if (::rtspServerCamera1.isInitialized && rtspServerCamera1.isStreaming) {
+                        rtspServerCamera1.stopStream()
+                        startStream()
+                    }
+                }
+            },
+            isH265 = { useH265 },
+            onResolutionUpdate = { w, h ->
+                if (videoWidth != w || videoHeight != h) {
+                    videoWidth = w
+                    videoHeight = h
+                    // Restart stream with new resolution if running
+                    if (::rtspServerCamera1.isInitialized && rtspServerCamera1.isStreaming) {
+                        rtspServerCamera1.stopStream()
+                        startStream()
+                    }
+                }
+            }
+        )
         webServer.start()
-        // snapshotHandler.post(snapshotRunnable) // Temporarily disabled to debug crash
+        snapshotHandler.post(snapshotRunnable)
     }
 
     private fun getIpAddress(): String {
@@ -154,7 +200,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             if (!rtspServerCamera1.isStreaming) {
                 rtspServerCamera1.prepareAudio(64 * 1024, 44100, true, false, false)
                 rtspServerCamera1.setVideoCodec(if (useH265) VideoCodec.H265 else VideoCodec.H264)
-                rtspServerCamera1.prepareVideo(640, 480, 30, 2000 * 1024, 0)
+                rtspServerCamera1.prepareVideo(videoWidth, videoHeight, 30, 2000 * 1024, 0)
                 rtspServerCamera1.startStream()
             }
         } catch (e: Exception) {
