@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    tools:context=".MainActivity">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="CCTV Server"
+        android:textSize="24sp"
+        android:layout_marginBottom="16dp"/>
+
+    <Switch
+        android:id="@+id/switch_server"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enable Server"
+        android:textSize="18sp"
+        android:layout_marginBottom="16dp"/>
+
+    <Switch
+        android:id="@+id/switch_codec"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Use H.265 (HEVC)"
+        android:textSize="18sp"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Device IP Address:"
+        android:textSize="18sp" />
+
+    <TextView
+        android:id="@+id/text_ip_address"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="192.168.1.100"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:id="@+id/view_guide"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="You can view the stream at rtsp://[YOUR_IP]:8554/stream"
+        android:textSize="16sp" />
+
+</LinearLayout>
