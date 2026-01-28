@@ -21,7 +21,7 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicReference
 import com.pedro.common.VideoCodec
 import com.pedro.encoder.video.VideoEncoder
-import com.pedro.rtspserver.RtspServerCamera1
+import com.pedro.rtspserver.RtspServerCamera2
 import com.pedro.library.view.OpenGlView
 import com.pedro.common.ConnectChecker
 
@@ -29,7 +29,7 @@ import android.view.SurfaceHolder
 
 class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
-    private lateinit var rtspServerCamera1: RtspServerCamera1
+    private lateinit var rtspServerCamera: RtspServerCamera2
     private lateinit var openGlView: OpenGlView
     private lateinit var webServer: WebServer
     private lateinit var windowManager: WindowManager
@@ -43,7 +43,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private val snapshotHandler = Handler(Looper.getMainLooper())
     private val snapshotRunnable = object : Runnable {
         override fun run() {
-            if (::rtspServerCamera1.isInitialized && rtspServerCamera1.isStreaming) {
+            if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
                  takeSnapshot()
             }
             snapshotHandler.postDelayed(this, 500) // 2 FPS to be safe
@@ -78,33 +78,33 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         webServer = WebServer(this, getIpAddress(), 
             imageProvider = { currentSnapshot.get() },
             onSwitchCamera = {
-                if (::rtspServerCamera1.isInitialized) {
+                if (::rtspServerCamera.isInitialized) {
                     try {
-                        rtspServerCamera1.switchCamera()
+                        rtspServerCamera.switchCamera()
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
                 }
             },
             onStartStream = {
-                if (isSurfaceCreated && (!::rtspServerCamera1.isInitialized || !rtspServerCamera1.isStreaming)) {
+                if (isSurfaceCreated && (!::rtspServerCamera.isInitialized || !rtspServerCamera.isStreaming)) {
                     startStream()
                 }
             },
             onStopStream = {
-                if (::rtspServerCamera1.isInitialized && rtspServerCamera1.isStreaming) {
-                    rtspServerCamera1.stopStream()
+                if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+                    rtspServerCamera.stopStream()
                 }
             },
             isStreaming = {
-                if (::rtspServerCamera1.isInitialized) rtspServerCamera1.isStreaming else false
+                if (::rtspServerCamera.isInitialized) rtspServerCamera.isStreaming else false
             },
             onCodecUpdate = { enableH265 ->
                 if (useH265 != enableH265) {
                     useH265 = enableH265
                     // Restart stream with new codec if running
-                    if (::rtspServerCamera1.isInitialized && rtspServerCamera1.isStreaming) {
-                        rtspServerCamera1.stopStream()
+                    if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+                        rtspServerCamera.stopStream()
                         startStream()
                     }
                 }
@@ -115,8 +115,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     videoWidth = w
                     videoHeight = h
                     // Restart stream with new resolution if running
-                    if (::rtspServerCamera1.isInitialized && rtspServerCamera1.isStreaming) {
-                        rtspServerCamera1.stopStream()
+                    if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+                        rtspServerCamera.stopStream()
                         startStream()
                     }
                 }
@@ -138,8 +138,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
     private fun takeSnapshot() {
         try {
-            // RtspServerCamera1/BaseCamera1 doesn't expose glInterface directly in all versions, 
-            // but OpenGlView does.
+            // RtspServerCamera2/BaseCamera2 approach for snapshots via OpenGlView
             openGlView.takePhoto { bitmap -> 
                 val stream = ByteArrayOutputStream()
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 50, stream)
@@ -165,14 +164,14 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         // Initialize wrapper if needed
-        if (!::rtspServerCamera1.isInitialized) {
-             rtspServerCamera1 = RtspServerCamera1(openGlView, this, 8554)
+        if (!::rtspServerCamera.isInitialized) {
+             rtspServerCamera = RtspServerCamera2(openGlView, this, 8554)
         }
 
         // If already streaming, check if we need to restart due to config change
-        if (rtspServerCamera1.isStreaming) {
+        if (rtspServerCamera.isStreaming) {
             if (useH265 != newUseH265) {
-                rtspServerCamera1.stopStream()
+                rtspServerCamera.stopStream()
                 // Proceed to start stream with new config
             } else {
                 // Already streaming with correct config, ignore
@@ -193,15 +192,25 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         if (!isSurfaceCreated || !openGlView.holder.surface.isValid) return
         
         try {
-            if (!::rtspServerCamera1.isInitialized) {
-                rtspServerCamera1 = RtspServerCamera1(openGlView, this, 8554)
+            if (!::rtspServerCamera.isInitialized) {
+                rtspServerCamera = RtspServerCamera2(openGlView, this, 8554)
             }
             
-            if (!rtspServerCamera1.isStreaming) {
-                rtspServerCamera1.prepareAudio(64 * 1024, 44100, true, false, false)
-                rtspServerCamera1.setVideoCodec(if (useH265) VideoCodec.H265 else VideoCodec.H264)
-                rtspServerCamera1.prepareVideo(videoWidth, videoHeight, 30, 2000 * 1024, 0)
-                rtspServerCamera1.startStream()
+            if (!rtspServerCamera.isStreaming) {
+                // Dynamic Bitrate Calculation
+                // 1080p (2MP) -> 6 Mbps
+                // 720p (0.9MP) -> 4 Mbps
+                // 480p (0.3MP) -> 2 Mbps
+                val bitrate = when {
+                    videoWidth >= 1920 -> 6000 * 1024
+                    videoWidth >= 1280 -> 4000 * 1024
+                    else -> 2000 * 1024
+                }
+
+                rtspServerCamera.prepareAudio(64 * 1024, 44100, true, false, false)
+                rtspServerCamera.setVideoCodec(if (useH265) VideoCodec.H265 else VideoCodec.H264)
+                rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)
+                rtspServerCamera.startStream()
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -214,15 +223,15 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        if (::rtspServerCamera1.isInitialized && !rtspServerCamera1.isStreaming) {
+        if (::rtspServerCamera.isInitialized && !rtspServerCamera.isStreaming) {
              startStream()
         }
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         isSurfaceCreated = false
-        if (::rtspServerCamera1.isInitialized && rtspServerCamera1.isStreaming) {
-            rtspServerCamera1.stopStream()
+        if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+            rtspServerCamera.stopStream()
         }
 
 
@@ -230,8 +239,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (::rtspServerCamera1.isInitialized && rtspServerCamera1.isStreaming) {
-            rtspServerCamera1.stopStream()
+        if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+            rtspServerCamera.stopStream()
         }
         if (::openGlView.isInitialized) {
             windowManager.removeView(openGlView)
