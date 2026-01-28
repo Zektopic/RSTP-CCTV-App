@@ -9,6 +9,7 @@ import android.net.wifi.WifiManager
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.widget.Switch
+import android.widget.Button
 import android.widget.TextView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -27,6 +28,8 @@ class MainActivity : AppCompatActivity() {
 
         val switchServer = findViewById<Switch>(R.id.switch_server)
         val switchCodec = findViewById<Switch>(R.id.switch_codec)
+        val btnSwitchCamera = findViewById<Button>(R.id.btn_switch_camera)
+        val switchPreview = findViewById<Switch>(R.id.switch_preview)
         val textIpAddress = findViewById<TextView>(R.id.text_ip_address)
 
         // Request camera and audio permissions
@@ -57,6 +60,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     val intent = Intent(this, CctvServerService::class.java)
                     intent.putExtra("use_h265", switchCodec.isChecked)
+                    intent.putExtra("show_preview", switchPreview.isChecked)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         startForegroundService(intent)
                     } else {
@@ -72,6 +76,19 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(this, CctvServerService::class.java)
             intent.putExtra("use_h265", isChecked)
             startService(intent) // Restart the service with the new codec setting
+        }
+
+        btnSwitchCamera.setOnClickListener {
+            val intent = Intent(this, CctvServerService::class.java)
+            intent.action = "ACTION_SWITCH_CAMERA"
+            startService(intent)
+        }
+
+        switchPreview.setOnCheckedChangeListener { _, isChecked ->
+            val intent = Intent(this, CctvServerService::class.java)
+            intent.action = "ACTION_TOGGLE_PREVIEW"
+            intent.putExtra("show_preview", isChecked)
+            startService(intent)
         }
     }
 

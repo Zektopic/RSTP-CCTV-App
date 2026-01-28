@@ -31,6 +31,22 @@
         android:textSize="18sp"
         android:layout_marginBottom="16dp"/>
 
+    <Button
+        android:id="@+id/btn_switch_camera"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Switch Camera"
+        android:textSize="18sp"
+        android:layout_marginBottom="16dp"/>
+
+    <Switch
+        android:id="@+id/switch_preview"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Show Preview"
+        android:textSize="18sp"
+        android:layout_marginBottom="16dp"/>
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

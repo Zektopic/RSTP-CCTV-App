@@ -24,6 +24,8 @@ import com.pedro.encoder.video.VideoEncoder
 import com.pedro.rtspserver.RtspServerCamera2
 import com.pedro.library.view.OpenGlView
 import com.pedro.common.ConnectChecker
+import android.media.MediaCodecList
+import android.media.MediaFormat
 
 import android.view.SurfaceHolder
 
@@ -39,6 +41,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private var videoWidth = 640
     private var videoHeight = 480
     private var useH265 = false
+    private var showPreview = false
     private val currentSnapshot = AtomicReference<ByteArray>(null)
     private val snapshotHandler = Handler(Looper.getMainLooper())
     private val snapshotRunnable = object : Runnable {
@@ -150,7 +153,28 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "ACTION_SWITCH_CAMERA") {
+            if (::rtspServerCamera.isInitialized) {
+                try {
+                    rtspServerCamera.switchCamera()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            return START_STICKY
+        }
+
+        if (intent?.action == "ACTION_TOGGLE_PREVIEW") {
+            val show = intent.getBooleanExtra("show_preview", false)
+            if (showPreview != show) {
+                showPreview = show
+                updateOverlaySize()
+            }
+            return START_STICKY
+        }
+
         val newUseH265 = intent?.getBooleanExtra("use_h265", false) ?: false
+        val newShowPreview = intent?.getBooleanExtra("show_preview", false) ?: false
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CCTV Server")
@@ -180,6 +204,11 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         }
         
         useH265 = newUseH265
+        
+        if (showPreview != newShowPreview) {
+             showPreview = newShowPreview
+             updateOverlaySize()
+        }
 
         if (isSurfaceCreated) {
             startStream()
@@ -208,13 +237,53 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 }
 
                 rtspServerCamera.prepareAudio(64 * 1024, 44100, true, false, false)
-                rtspServerCamera.setVideoCodec(if (useH265) VideoCodec.H265 else VideoCodec.H264)
-                rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)
-                rtspServerCamera.startStream()
+
+                // Check and set Codec
+                var selectedCodec = if (useH265 && isH265Supported()) VideoCodec.H265 else VideoCodec.H264
+                rtspServerCamera.setVideoCodec(selectedCodec)
+
+                if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
+                    rtspServerCamera.startStream()
+                } else {
+                    // unexpected failure, try fallback if we were trying H265
+                    if (selectedCodec == VideoCodec.H265) {
+                        android.util.Log.w("CctvServerService", "H265 preparation failed, falling back to H264")
+                        rtspServerCamera.setVideoCodec(VideoCodec.H264)
+                        if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
+                             rtspServerCamera.startStream()
+                             // Force disable H265 flag so UI knows?
+                             // useH265 = false // Optional: update state to reflect reality
+                        } else {
+                             android.util.Log.e("CctvServerService", "H264 fallback preparation also failed.")
+                        }
+                    } else {
+                        android.util.Log.e("CctvServerService", "Video preparation failed for H264.")
+                    }
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private fun isH265Supported(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
+        try {
+            val list = MediaCodecList(MediaCodecList.ALL_CODECS)
+            val codecs = list.codecInfos
+            for (codec in codecs) {
+                if (!codec.isEncoder) continue
+                val types = codec.supportedTypes
+                for (type in types) {
+                    if (type.equals(MediaFormat.MIMETYPE_VIDEO_HEVC, ignoreCase = true)) {
+                        return true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return false
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -248,6 +317,22 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         webServer.stop()
         snapshotHandler.removeCallbacks(snapshotRunnable)
         stopForeground(true)
+    }
+
+    private fun updateOverlaySize() {
+        if (!::openGlView.isInitialized) return
+        
+        val layoutParams = openGlView.layoutParams as WindowManager.LayoutParams
+        if (showPreview) {
+             // Show resized preview, e.g. 320x240 or aspect ratio
+             layoutParams.width = 320
+             layoutParams.height = 240
+        } else {
+             // "Hide" it by making it 1x1 pixel
+             layoutParams.width = 1
+             layoutParams.height = 1
+        }
+        windowManager.updateViewLayout(openGlView, layoutParams)
     }
 
     private fun createNotificationChannel() {
