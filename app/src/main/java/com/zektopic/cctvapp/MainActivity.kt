@@ -30,7 +30,15 @@ class MainActivity : AppCompatActivity() {
         val switchCodec = findViewById<Switch>(R.id.switch_codec)
         val btnSwitchCamera = findViewById<Button>(R.id.btn_switch_camera)
         val switchPreview = findViewById<Switch>(R.id.switch_preview)
+        val spinnerResolution = findViewById<android.widget.Spinner>(R.id.spinner_resolution)
         val textIpAddress = findViewById<TextView>(R.id.text_ip_address)
+
+        // Setup Spinner
+        val resolutions = arrayOf("640x480", "1280x720", "1920x1080")
+        val adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, resolutions)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerResolution.adapter = adapter
+        spinnerResolution.setSelection(0) // Default 480p
 
         // Request camera and audio permissions
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
@@ -50,6 +58,12 @@ class MainActivity : AppCompatActivity() {
 
         switchServer.isChecked = isServiceRunning(CctvServerService::class.java)
 
+        fun getSelectedResolution(): Pair<Int, Int> {
+            val selectedItem = spinnerResolution.selectedItem as String
+            val parts = selectedItem.split("x")
+            return Pair(parts[0].toInt(), parts[1].toInt())
+        }
+
         switchServer.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
                 if (!Settings.canDrawOverlays(this)) {
@@ -61,6 +75,9 @@ class MainActivity : AppCompatActivity() {
                     val intent = Intent(this, CctvServerService::class.java)
                     intent.putExtra("use_h265", switchCodec.isChecked)
                     intent.putExtra("show_preview", switchPreview.isChecked)
+                    val (w, h) = getSelectedResolution()
+                    intent.putExtra("width", w)
+                    intent.putExtra("height", h)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         startForegroundService(intent)
                     } else {
@@ -73,23 +90,57 @@ class MainActivity : AppCompatActivity() {
         }
 
         switchCodec.setOnCheckedChangeListener { _, isChecked ->
-            val intent = Intent(this, CctvServerService::class.java)
-            intent.putExtra("use_h265", isChecked)
-            startService(intent) // Restart the service with the new codec setting
+            if (switchServer.isChecked) {
+                val intent = Intent(this, CctvServerService::class.java)
+                intent.putExtra("use_h265", isChecked)
+                intent.putExtra("show_preview", switchPreview.isChecked)
+                val (w, h) = getSelectedResolution()
+                intent.putExtra("width", w)
+                intent.putExtra("height", h)
+                startService(intent) // Restart the service with the new codec setting
+            }
         }
 
         btnSwitchCamera.setOnClickListener {
-            val intent = Intent(this, CctvServerService::class.java)
-            intent.action = "ACTION_SWITCH_CAMERA"
-            startService(intent)
+             if (switchServer.isChecked) {
+                val intent = Intent(this, CctvServerService::class.java)
+                intent.action = "ACTION_SWITCH_CAMERA"
+                startService(intent)
+             }
         }
 
         switchPreview.setOnCheckedChangeListener { _, isChecked ->
-            val intent = Intent(this, CctvServerService::class.java)
-            intent.action = "ACTION_TOGGLE_PREVIEW"
-            intent.putExtra("show_preview", isChecked)
-            startService(intent)
+             if (switchServer.isChecked) {
+                val intent = Intent(this, CctvServerService::class.java)
+                intent.action = "ACTION_TOGGLE_PREVIEW"
+                intent.putExtra("show_preview", isChecked)
+                startService(intent)
+             }
         }
+
+        spinnerResolution.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>, view: android.view.View?, position: Int, id: Long) {
+                 if (switchServer.isChecked) {
+                    val intent = Intent(this@MainActivity, CctvServerService::class.java)
+                    intent.putExtra("use_h265", switchCodec.isChecked)
+                    intent.putExtra("show_preview", switchPreview.isChecked)
+                    val (w, h) = getSelectedResolution()
+                    intent.putExtra("width", w)
+                    intent.putExtra("height", h)
+                    startService(intent)
+                }
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>) {}
+        }
+
+        // Auto-start if permissions are already granted
+        if (!switchServer.isChecked && allPermissionsGranted() && Settings.canDrawOverlays(this)) {
+             switchServer.isChecked = true
+        }
+    }
+
+    private fun allPermissionsGranted() = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO).all {
+        ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun isServiceRunning(serviceClass: Class<*>): Boolean {

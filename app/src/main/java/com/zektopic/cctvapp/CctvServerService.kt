@@ -175,6 +175,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
         val newUseH265 = intent?.getBooleanExtra("use_h265", false) ?: false
         val newShowPreview = intent?.getBooleanExtra("show_preview", false) ?: false
+        val newWidth = intent?.getIntExtra("width", 640) ?: 640
+        val newHeight = intent?.getIntExtra("height", 480) ?: 480
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CCTV Server")
@@ -194,16 +196,22 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
         // If already streaming, check if we need to restart due to config change
         if (rtspServerCamera.isStreaming) {
-            if (useH265 != newUseH265) {
+            if (useH265 != newUseH265 || videoWidth != newWidth || videoHeight != newHeight) {
                 rtspServerCamera.stopStream()
                 // Proceed to start stream with new config
             } else {
                 // Already streaming with correct config, ignore
+                if (showPreview != newShowPreview) {
+                     showPreview = newShowPreview
+                     updateOverlaySize()
+                }
                 return START_STICKY
             }
         }
         
         useH265 = newUseH265
+        videoWidth = newWidth
+        videoHeight = newHeight
         
         if (showPreview != newShowPreview) {
              showPreview = newShowPreview
