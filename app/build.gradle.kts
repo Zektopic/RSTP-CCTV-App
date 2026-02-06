@@ -40,7 +40,7 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    implementation("com.github.pedroSG94.RootEncoder:library:2.6.1")
-    implementation("com.github.pedroSG94:RTSP-Server:1.3.6")
+    implementation("com.github.pedroSG94.RootEncoder:library:2.6.7")
+    implementation("com.github.pedroSG94:RTSP-Server:master-SNAPSHOT")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 }

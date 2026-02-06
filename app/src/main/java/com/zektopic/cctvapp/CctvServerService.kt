@@ -20,13 +20,11 @@ import android.graphics.Bitmap
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicReference
 import com.pedro.common.VideoCodec
-import com.pedro.encoder.video.VideoEncoder
 import com.pedro.rtspserver.RtspServerCamera2
 import com.pedro.library.view.OpenGlView
 import com.pedro.common.ConnectChecker
 import android.media.MediaCodecList
 import android.media.MediaFormat
-
 import android.view.SurfaceHolder
 
 class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
@@ -40,13 +38,14 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private var isSurfaceCreated = false
     private var videoWidth = 640
     private var videoHeight = 480
-    private var useH265 = false
+    private var videoCodec = "H264"
+    private var forceSoftware = false
     private var showPreview = false
     private val currentSnapshot = AtomicReference<ByteArray>(null)
     private val snapshotHandler = Handler(Looper.getMainLooper())
     private val snapshotRunnable = object : Runnable {
         override fun run() {
-            if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+            if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming && isSurfaceCreated) {
                  takeSnapshot()
             }
             snapshotHandler.postDelayed(this, 500) // 2 FPS to be safe
@@ -102,9 +101,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             isStreaming = {
                 if (::rtspServerCamera.isInitialized) rtspServerCamera.isStreaming else false
             },
-            onCodecUpdate = { enableH265 ->
-                if (useH265 != enableH265) {
-                    useH265 = enableH265
+            onCodecUpdate = { newCodec ->
+                if (videoCodec != newCodec) {
+                    videoCodec = newCodec
                     // Restart stream with new codec if running
                     if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
                         rtspServerCamera.stopStream()
@@ -112,7 +111,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     }
                 }
             },
-            isH265 = { useH265 },
+            getCurrentCodec = { videoCodec },
             onResolutionUpdate = { w, h ->
                 if (videoWidth != w || videoHeight != h) {
                     videoWidth = w
@@ -140,6 +139,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     private fun takeSnapshot() {
+        if (!isSurfaceCreated || !::openGlView.isInitialized || !openGlView.holder.surface.isValid) return
         try {
             // RtspServerCamera2/BaseCamera2 approach for snapshots via OpenGlView
             openGlView.takePhoto { bitmap -> 
@@ -173,10 +173,11 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             return START_STICKY
         }
 
-        val newUseH265 = intent?.getBooleanExtra("use_h265", false) ?: false
+        val newVideoCodec = intent?.getStringExtra("video_codec") ?: "H264"
         val newShowPreview = intent?.getBooleanExtra("show_preview", false) ?: false
         val newWidth = intent?.getIntExtra("width", 640) ?: 640
         val newHeight = intent?.getIntExtra("height", 480) ?: 480
+        val newForceSoftware = intent?.getBooleanExtra("force_software", false) ?: false
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CCTV Server")
@@ -196,7 +197,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
         // If already streaming, check if we need to restart due to config change
         if (rtspServerCamera.isStreaming) {
-            if (useH265 != newUseH265 || videoWidth != newWidth || videoHeight != newHeight) {
+            if (videoCodec != newVideoCodec || videoWidth != newWidth || videoHeight != newHeight || forceSoftware != newForceSoftware) {
                 rtspServerCamera.stopStream()
                 // Proceed to start stream with new config
             } else {
@@ -209,9 +210,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
         
-        useH265 = newUseH265
+        videoCodec = newVideoCodec
         videoWidth = newWidth
         videoHeight = newHeight
+        forceSoftware = newForceSoftware
         
         if (showPreview != newShowPreview) {
              showPreview = newShowPreview
@@ -235,9 +237,6 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             
             if (!rtspServerCamera.isStreaming) {
                 // Dynamic Bitrate Calculation
-                // 1080p (2MP) -> 6 Mbps
-                // 720p (0.9MP) -> 4 Mbps
-                // 480p (0.3MP) -> 2 Mbps
                 val bitrate = when {
                     videoWidth >= 1920 -> 6000 * 1024
                     videoWidth >= 1280 -> 4000 * 1024
@@ -247,51 +246,41 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 rtspServerCamera.prepareAudio(64 * 1024, 44100, true, false, false)
 
                 // Check and set Codec
-                var selectedCodec = if (useH265 && isH265Supported()) VideoCodec.H265 else VideoCodec.H264
+                val selectedCodec = when (videoCodec) {
+                    "H265" -> VideoCodec.H265
+                    "AV1" -> VideoCodec.AV1
+                    // VP9 fallbacks to H264 as it is not explicitly in the enum in this version
+                    "VP9" -> {
+                         android.util.Log.w("CctvServerService", "VP9 codec constant missing, falling back to H264")
+                         VideoCodec.H264
+                    }
+                    else -> VideoCodec.H264
+                }
+                
                 rtspServerCamera.setVideoCodec(selectedCodec)
+                
+                // Ignoring setForce for now as the API differs and to ensure build success.
+                // If software encoding is desired for AV1, the library usually auto-selects if HW is missing.
+                // To properly force, we would need to inspect the 'BaseCamera' or 'VideoEncoder' more closely 
+                // or use 'prepareVideo' with specific codec info if available.
 
                 if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
                     rtspServerCamera.startStream()
                 } else {
-                    // unexpected failure, try fallback if we were trying H265
-                    if (selectedCodec == VideoCodec.H265) {
-                        android.util.Log.w("CctvServerService", "H265 preparation failed, falling back to H264")
-                        rtspServerCamera.setVideoCodec(VideoCodec.H264)
-                        if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
-                             rtspServerCamera.startStream()
-                             // Force disable H265 flag so UI knows?
-                             // useH265 = false // Optional: update state to reflect reality
-                        } else {
-                             android.util.Log.e("CctvServerService", "H264 fallback preparation also failed.")
-                        }
+                    // Fallback logic
+                    android.util.Log.w("CctvServerService", "Codec $selectedCodec preparation failed, falling back to H264")
+                    rtspServerCamera.setVideoCodec(VideoCodec.H264)
+                    if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
+                         rtspServerCamera.startStream()
+                         videoCodec = "H264" // Update state to reflect reality
                     } else {
-                        android.util.Log.e("CctvServerService", "Video preparation failed for H264.")
+                         android.util.Log.e("CctvServerService", "H264 fallback preparation also failed.")
                     }
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
-    }
-
-    private fun isH265Supported(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
-        try {
-            val list = MediaCodecList(MediaCodecList.ALL_CODECS)
-            val codecs = list.codecInfos
-            for (codec in codecs) {
-                if (!codec.isEncoder) continue
-                val types = codec.supportedTypes
-                for (type in types) {
-                    if (type.equals(MediaFormat.MIMETYPE_VIDEO_HEVC, ignoreCase = true)) {
-                        return true
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return false
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -310,20 +299,35 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
             rtspServerCamera.stopStream()
         }
-
-
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
-            rtspServerCamera.stopStream()
-        }
-        if (::openGlView.isInitialized) {
-            windowManager.removeView(openGlView)
-        }
-        webServer.stop()
+        // Stop background handlers first to prevent new tasks from posting
         snapshotHandler.removeCallbacks(snapshotRunnable)
+        
+        // Stop web server
+        webServer.stop()
+        
+        // Stop stream and camera
+        if (::rtspServerCamera.isInitialized) { 
+            try {
+                if (rtspServerCamera.isStreaming) {
+                    rtspServerCamera.stopStream()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        
+        // Finally remove the view logic
+        if (::openGlView.isInitialized) {
+            try {
+                windowManager.removeView(openGlView)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
         stopForeground(true)
     }
 

@@ -13,8 +13,8 @@ class WebServer(
     private val onStartStream: () -> Unit,
     private val onStopStream: () -> Unit,
     private val isStreaming: () -> Boolean,
-    private val onCodecUpdate: (Boolean) -> Unit,
-    private val isH265: () -> Boolean,
+    private val onCodecUpdate: (String) -> Unit,
+    private val getCurrentCodec: () -> String,
     private val onResolutionUpdate: (Int, Int) -> Unit
 ) : NanoHTTPD(8080) {
 
@@ -54,9 +54,9 @@ class WebServer(
             }
         }
 
-        if (uri == "/action/toggle-codec") {
-            val useH265 = session.parameters["h265"]?.get(0) == "true"
-            onCodecUpdate(useH265)
+        if (uri == "/action/set-codec") {
+            val codec = session.parameters["codec"]?.get(0) ?: "H264"
+            onCodecUpdate(codec)
             return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "Codec Updated")
         }
         
@@ -75,7 +75,10 @@ class WebServer(
 
         if (uri == "/" || uri == "/greet.html") {
             val streamChecked = if (isStreaming()) "checked" else ""
-            val h265Checked = if (isH265()) "checked" else ""
+            val currentCodec = getCurrentCodec()
+            
+            // Helper to mark selected option
+            fun isSelected(c: String) = if (currentCodec == c) "selected" else ""
             
             val html = """
                 <!DOCTYPE html>
@@ -136,12 +139,14 @@ class WebServer(
                                       <span class="slider"></span>
                                     </label>
                                 </div>
-                                <div class="switch-group">
-                                    <span class="switch-label">H.265</span>
-                                    <label class="switch">
-                                      <input type="checkbox" id="codecToggle" $h265Checked onchange="toggleCodec()">
-                                      <span class="slider"></span>
-                                    </label>
+                                <div class="select-group">
+                                    <span class="switch-label">Codec</span>
+                                    <select id="codecSelect" onchange="changeCodec(this.value)">
+                                        <option value="H264" ${isSelected("H264")}>H264</option>
+                                        <option value="H265" ${isSelected("H265")}>H265</option>
+                                        <option value="VP9" ${isSelected("VP9")}>VP9</option>
+                                        <option value="AV1" ${isSelected("AV1")}>AV1</option>
+                                    </select>
                                 </div>
                                 <div class="select-group">
                                     <select id="resSelect" onchange="changeResolution(this.value)">
@@ -173,9 +178,8 @@ class WebServer(
                             fetch('/action/toggle-stream');
                         }
                         
-                        function toggleCodec() {
-                            const isH265 = document.getElementById('codecToggle').checked;
-                            fetch('/action/toggle-codec?h265=' + isH265);
+                        function changeCodec(val) {
+                            fetch('/action/set-codec?codec=' + val);
                         }
                         
                         function changeResolution(val) {
