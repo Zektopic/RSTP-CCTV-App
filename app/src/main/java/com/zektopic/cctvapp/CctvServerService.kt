@@ -19,6 +19,8 @@ import android.os.Looper
 import android.graphics.Bitmap
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicReference
+import com.pedro.encoder.utils.CodecUtil
+
 import com.pedro.common.VideoCodec
 import com.pedro.rtspserver.RtspServerCamera2
 import com.pedro.library.view.OpenGlView
@@ -73,7 +75,15 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             PixelFormat.TRANSLUCENT
         )
         layoutParams.gravity = Gravity.TOP or Gravity.START
-        windowManager.addView(openGlView, layoutParams)
+        try {
+            windowManager.addView(openGlView, layoutParams)
+        } catch (e: Exception) {
+            // Likely SecurityException or BadTokenException if permission is missing
+            android.util.Log.e("CctvServerService", "Failed to add view. Permission issue?", e)
+            e.printStackTrace()
+            // We can't strictly run without the view for hardware encoding surface, 
+            // but preventing the crash is better.
+        }
         openGlView.holder.addCallback(this)
         openGlView.holder.setFixedSize(640, 480) // Ensure valid surface size
 
@@ -258,11 +268,11 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 }
                 
                 rtspServerCamera.setVideoCodec(selectedCodec)
+                android.util.Log.d("CctvServerService", "Selected codec: $selectedCodec ($videoCodec)")
                 
-                // Ignoring setForce for now as the API differs and to ensure build success.
-                // If software encoding is desired for AV1, the library usually auto-selects if HW is missing.
-                // To properly force, we would need to inspect the 'BaseCamera' or 'VideoEncoder' more closely 
-                // or use 'prepareVideo' with specific codec info if available.
+                // setForce is currently unresolved in RtspServerCamera2. 
+                // Relying on default encoder selection (usually Hardware).
+                // if (forceSoftware) { ... } 
 
                 if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
                     rtspServerCamera.startStream()
