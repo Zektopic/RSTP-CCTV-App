@@ -65,7 +65,7 @@ jobs:
 
       - name: Sign Release APK
         id: sign_app
-        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        if: secrets.KEYSTORE_FILE != ''
         uses: r0adkll/sign-android-release@v1
         with:
           releaseDirectory: app/build/outputs/apk/release
