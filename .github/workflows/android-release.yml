@@ -63,18 +63,7 @@ jobs:
       - name: Build Release APK
         run: ./gradlew app:assembleRelease
 
-      - name: Sign Release APK
-        id: sign_app
-        if: secrets.KEYSTORE_FILE != ''
-        uses: r0adkll/sign-android-release@v1
-        with:
-          releaseDirectory: app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.KEYSTORE_FILE }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "34.0.0"
+
 
       - name: Generate Release Tag
         id: tag
