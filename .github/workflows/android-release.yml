@@ -1,0 +1,94 @@
+name: Android Release
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  check-runner:
+    runs-on: ubuntu-latest
+    outputs:
+      runner-label: ${{ steps.check_runner.outputs.runner-label }}
+    steps:
+      - name: Check for Self-Hosted Runners
+        id: check_runner
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const runners = await github.rest.actions.listSelfHostedRunnersForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              
+              const selfHosted = runners.data.runners.find(r => 
+                r.labels.some(l => l.name === 'self-hosted') && r.status === 'online' && r.busy === false
+              );
+              
+              if (selfHosted) {
+                console.log('Found available self-hosted runner.');
+                core.setOutput('runner-label', 'self-hosted');
+              } else {
+                console.log('No available self-hosted runner found. Falling back to ubuntu-latest.');
+                core.setOutput('runner-label', 'ubuntu-latest');
+              }
+            } catch (error) {
+              console.log('Error checking for self-hosted runners or no permission. Defaulting to ubuntu-latest.');
+              console.log(error);
+              core.setOutput('runner-label', 'ubuntu-latest');
+            }
+
+  build-and-release:
+    needs: check-runner
+    runs-on: ${{ needs.check-runner.outputs.runner-label }}
+    permissions:
+      contents: write # Required for creating a release
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release APK
+        run: ./gradlew app:assembleRelease
+
+      - name: Sign Release APK
+        id: sign_app
+        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        uses: r0adkll/sign-android-release@v1
+        with:
+          releaseDirectory: app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.KEYSTORE_FILE }}
+          alias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"
+
+      - name: Generate Release Tag
+        id: tag
+        run: echo "release_tag=release-$(date +'%Y-%m-%d-%H-%M-%S')" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          name: Release ${{ steps.tag.outputs.release_tag }}
+          draft: false
+          prerelease: false
+          files: |
+            app/build/outputs/apk/release/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
