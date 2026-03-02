@@ -1,98 +1,282 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp"
+    android:fillViewport="true"
     tools:context=".MainActivity">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="CCTV Server"
-        android:textSize="24sp"
-        android:layout_marginBottom="16dp"/>
-
-    <Switch
-        android:id="@+id/switch_server"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Enable Server"
-        android:textSize="18sp"
-        android:layout_marginBottom="16dp"/>
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="32dp"
+        android:paddingBottom="24dp">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Video Codec:"
-        android:textSize="18sp" />
+        <!-- App Title -->
+        <TextView
+            android:id="@+id/title_cctv_server"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:text="@string/cctv_server_title"
+            android:textAppearance="@style/TextAppearance.Material3.HeadlineLarge"
+            android:textColor="?attr/colorPrimary"
+            android:textStyle="bold" />
 
-    <Spinner
-        android:id="@+id/spinner_codec"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp" 
-        android:spinnerMode="dropdown"/>
+        <!-- ═══════════════════════════════════════ -->
+        <!-- Server Control Card                     -->
+        <!-- ═══════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:contentPadding="20dp">
 
-    <Switch
-        android:id="@+id/switch_force_software"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Force Software Codec"
-        android:textSize="18sp"
-        android:layout_marginBottom="16dp"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Resolution:"
-        android:textSize="18sp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/section_server"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                    android:textColor="?attr/colorPrimary" />
 
-    <Spinner
-        android:id="@+id/spinner_resolution"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp" 
-        android:spinnerMode="dropdown"/>
+                <!-- Enable Server with status indicator -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-    <Button
-        android:id="@+id/btn_switch_camera"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Switch Camera"
-        android:textSize="18sp"
-        android:layout_marginBottom="16dp"/>
+                    <View
+                        android:id="@+id/status_dot"
+                        android:layout_width="10dp"
+                        android:layout_height="10dp"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/status_dot_red" />
 
-    <Switch
-        android:id="@+id/switch_preview"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Show Preview"
-        android:textSize="18sp"
-        android:layout_marginBottom="16dp"/>
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switch_server"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/enable_server"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+                </LinearLayout>
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Device IP Address:"
-        android:textSize="18sp" />
+                <!-- Switch Camera Button -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_switch_camera"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/switch_camera"
+                    app:icon="@android:drawable/ic_menu_camera"
+                    app:iconGravity="textStart" />
 
-    <TextView
-        android:id="@+id/text_ip_address"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="192.168.1.100"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="16dp"/>
+                <!-- Show Preview -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switch_preview"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/show_preview"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
-    <TextView
-        android:id="@+id/view_guide"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="You can view the stream at rtsp://[YOUR_IP]:8554/stream"
-        android:textSize="16sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-</LinearLayout>
+        <!-- ═══════════════════════════════════════ -->
+        <!-- Video Settings Card                     -->
+        <!-- ═══════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:contentPadding="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/section_video"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                    android:textColor="?attr/colorPrimary" />
+
+                <!-- Video Codec -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/menu_codec"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/video_codec">
+
+                    <AutoCompleteTextView
+                        android:id="@+id/spinner_codec"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="none"
+                        tools:ignore="LabelFor" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Resolution -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/menu_resolution"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="@string/resolution">
+
+                    <AutoCompleteTextView
+                        android:id="@+id/spinner_resolution"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="none"
+                        tools:ignore="LabelFor" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Force Software Codec -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switch_force_software"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/force_software_codec"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ═══════════════════════════════════════ -->
+        <!-- Network Info Card                       -->
+        <!-- ═══════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:contentPadding="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/section_network"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                    android:textColor="?attr/colorPrimary" />
+
+                <!-- IP Address -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/title_ip_address"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/device_ip_address"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                    <TextView
+                        android:id="@+id/text_ip_address"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
+                        android:textColor="?attr/colorPrimary"
+                        android:textStyle="bold"
+                        tools:text="192.168.1.100" />
+                </LinearLayout>
+
+                <!-- RTSP URL with copy button -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/text_rtsp_url"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fontFamily="monospace"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        tools:text="rtsp://192.168.1.100:8554/stream" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_copy_rtsp"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="@string/copy_url"
+                        app:icon="@android:drawable/ic_menu_share" />
+                </LinearLayout>
+
+                <!-- Web Dashboard URL -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/text_web_url"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fontFamily="monospace"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        tools:text="http://192.168.1.100:8080" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_copy_web"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="@string/copy_url"
+                        app:icon="@android:drawable/ic_menu_share" />
+                </LinearLayout>
+
+                <!-- Guide text -->
+                <TextView
+                    android:id="@+id/view_guide"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/stream_url_guide"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+    </LinearLayout>
+</ScrollView>

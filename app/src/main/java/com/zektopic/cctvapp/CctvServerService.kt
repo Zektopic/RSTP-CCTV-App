@@ -6,37 +6,37 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.graphics.PixelFormat
-import android.os.Build
-import android.os.IBinder
-import android.view.Gravity
-import android.view.WindowManager
-
-import androidx.core.app.NotificationCompat
-import android.net.wifi.WifiManager
-import android.os.Handler
-import android.os.Looper
 import android.graphics.Bitmap
-import java.io.ByteArrayOutputStream
-import java.util.concurrent.atomic.AtomicReference
-import com.pedro.encoder.utils.CodecUtil
-
-import com.pedro.common.VideoCodec
-import com.pedro.rtspserver.RtspServerCamera2
-import com.pedro.library.view.OpenGlView
-import com.pedro.common.ConnectChecker
-import android.media.MediaCodecList
-import android.media.MediaFormat
+import android.graphics.PixelFormat
+import android.net.ConnectivityManager
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.view.Gravity
 import android.view.SurfaceHolder
+import android.view.WindowManager
+import androidx.core.app.NotificationCompat
+import com.pedro.common.ConnectChecker
+import com.pedro.common.VideoCodec
+import com.pedro.library.view.OpenGlView
+import com.pedro.rtspserver.RtspServerCamera2
+import java.io.ByteArrayOutputStream
+import java.net.Inet4Address
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicReference
 
 class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
+
+    companion object {
+        private const val NOTIFICATION_ID = 1
+        private const val CHANNEL_ID = "CctvServerChannel"
+    }
 
     private lateinit var rtspServerCamera: RtspServerCamera2
     private lateinit var openGlView: OpenGlView
     private lateinit var webServer: WebServer
     private lateinit var windowManager: WindowManager
-    private val NOTIFICATION_ID = 1
-    private val CHANNEL_ID = "CctvServerChannel"
     private var isSurfaceCreated = false
     private var videoWidth = 640
     private var videoHeight = 480
@@ -54,20 +54,32 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    override fun onBind(intent: Intent): IBinder? {
+    override fun onBind(intent: Intent?): IBinder? {
         return null
     }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+
+        // Load saved settings as defaults
+        videoCodec = AppPreferences.getVideoCodec(this)
+        videoWidth = AppPreferences.getVideoWidth(this)
+        videoHeight = AppPreferences.getVideoHeight(this)
+        forceSoftware = AppPreferences.getForceSoftware(this)
+        showPreview = AppPreferences.getShowPreview(this)
         
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         openGlView = OpenGlView(applicationContext)
         
+        @Suppress("DEPRECATION")
         val layoutParams = WindowManager.LayoutParams(
             1, 1,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                WindowManager.LayoutParams.TYPE_PHONE
+            },
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
@@ -78,14 +90,11 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         try {
             windowManager.addView(openGlView, layoutParams)
         } catch (e: Exception) {
-            // Likely SecurityException or BadTokenException if permission is missing
             android.util.Log.e("CctvServerService", "Failed to add view. Permission issue?", e)
             e.printStackTrace()
-            // We can't strictly run without the view for hardware encoding surface, 
-            // but preventing the crash is better.
         }
         openGlView.holder.addCallback(this)
-        openGlView.holder.setFixedSize(640, 480) // Ensure valid surface size
+        openGlView.holder.setFixedSize(640, 480)
 
         webServer = WebServer(this, getIpAddress(), 
             imageProvider = { currentSnapshot.get() },
@@ -114,7 +123,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             onCodecUpdate = { newCodec ->
                 if (videoCodec != newCodec) {
                     videoCodec = newCodec
-                    // Restart stream with new codec if running
+                    AppPreferences.setVideoCodec(this, newCodec)
                     if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
                         rtspServerCamera.stopStream()
                         startStream()
@@ -126,32 +135,32 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 if (videoWidth != w || videoHeight != h) {
                     videoWidth = w
                     videoHeight = h
-                    // Restart stream with new resolution if running
+                    AppPreferences.setResolution(this, w, h)
                     if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
                         rtspServerCamera.stopStream()
                         startStream()
                     }
                 }
-            }
+            },
+            getCurrentResolution = { "${videoWidth}x${videoHeight}" }
         )
         webServer.start()
         snapshotHandler.post(snapshotRunnable)
     }
 
     private fun getIpAddress(): String {
-        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        val ipAddress = wifiManager.connectionInfo.ipAddress
-        return String.format("%d.%d.%d.%d",
-            (ipAddress and 0xff),
-            (ipAddress shr 8 and 0xff),
-            (ipAddress shr 16 and 0xff),
-            (ipAddress shr 24 and 0xff))
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val activeNetwork = connectivityManager.activeNetwork
+        val linkProperties = connectivityManager.getLinkProperties(activeNetwork)
+        val ipv4Address = linkProperties?.linkAddresses?.firstOrNull { 
+            it.address is Inet4Address && !it.address.isLoopbackAddress 
+        }?.address?.hostAddress
+        return ipv4Address ?: "0.0.0.0"
     }
 
     private fun takeSnapshot() {
         if (!isSurfaceCreated || !::openGlView.isInitialized || !openGlView.holder.surface.isValid) return
         try {
-            // RtspServerCamera2/BaseCamera2 approach for snapshots via OpenGlView
             openGlView.takePhoto { bitmap -> 
                 val stream = ByteArrayOutputStream()
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 50, stream)
@@ -183,18 +192,18 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             return START_STICKY
         }
 
-        val newVideoCodec = intent?.getStringExtra("video_codec") ?: "H264"
-        val newShowPreview = intent?.getBooleanExtra("show_preview", false) ?: false
-        val newWidth = intent?.getIntExtra("width", 640) ?: 640
-        val newHeight = intent?.getIntExtra("height", 480) ?: 480
-        val newForceSoftware = intent?.getBooleanExtra("force_software", false) ?: false
+        val newVideoCodec = intent?.getStringExtra("video_codec") ?: AppPreferences.getVideoCodec(this)
+        val newShowPreview = intent?.getBooleanExtra("show_preview", AppPreferences.getShowPreview(this)) ?: false
+        val newWidth = intent?.getIntExtra("width", AppPreferences.getVideoWidth(this)) ?: 640
+        val newHeight = intent?.getIntExtra("height", AppPreferences.getVideoHeight(this)) ?: 480
+        val newForceSoftware = intent?.getBooleanExtra("force_software", AppPreferences.getForceSoftware(this)) ?: false
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CCTV Server")
             .setContentText("Server is running.")
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
         } else {
             startForeground(NOTIFICATION_ID, notification)
@@ -209,9 +218,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         if (rtspServerCamera.isStreaming) {
             if (videoCodec != newVideoCodec || videoWidth != newWidth || videoHeight != newHeight || forceSoftware != newForceSoftware) {
                 rtspServerCamera.stopStream()
-                // Proceed to start stream with new config
             } else {
-                // Already streaming with correct config, ignore
                 if (showPreview != newShowPreview) {
                      showPreview = newShowPreview
                      updateOverlaySize()
@@ -225,8 +232,14 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         videoHeight = newHeight
         forceSoftware = newForceSoftware
         
+        // Persist the settings
+        AppPreferences.setVideoCodec(this, videoCodec)
+        AppPreferences.setResolution(this, videoWidth, videoHeight)
+        AppPreferences.setForceSoftware(this, forceSoftware)
+
         if (showPreview != newShowPreview) {
              showPreview = newShowPreview
+             AppPreferences.setShowPreview(this, showPreview)
              updateOverlaySize()
         }
 
@@ -259,7 +272,6 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 val selectedCodec = when (videoCodec) {
                     "H265" -> VideoCodec.H265
                     "AV1" -> VideoCodec.AV1
-                    // VP9 fallbacks to H264 as it is not explicitly in the enum in this version
                     "VP9" -> {
                          android.util.Log.w("CctvServerService", "VP9 codec constant missing, falling back to H264")
                          VideoCodec.H264
@@ -269,20 +281,16 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 
                 rtspServerCamera.setVideoCodec(selectedCodec)
                 android.util.Log.d("CctvServerService", "Selected codec: $selectedCodec ($videoCodec)")
-                
-                // setForce is currently unresolved in RtspServerCamera2. 
-                // Relying on default encoder selection (usually Hardware).
-                // if (forceSoftware) { ... } 
 
                 if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
                     rtspServerCamera.startStream()
                 } else {
-                    // Fallback logic
                     android.util.Log.w("CctvServerService", "Codec $selectedCodec preparation failed, falling back to H264")
                     rtspServerCamera.setVideoCodec(VideoCodec.H264)
                     if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
                          rtspServerCamera.startStream()
-                         videoCodec = "H264" // Update state to reflect reality
+                         videoCodec = "H264"
+                         AppPreferences.setVideoCodec(this, videoCodec)
                     } else {
                          android.util.Log.e("CctvServerService", "H264 fallback preparation also failed.")
                     }
@@ -313,13 +321,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Stop background handlers first to prevent new tasks from posting
         snapshotHandler.removeCallbacks(snapshotRunnable)
         
-        // Stop web server
         webServer.stop()
         
-        // Stop stream and camera
         if (::rtspServerCamera.isInitialized) { 
             try {
                 if (rtspServerCamera.isStreaming) {
@@ -330,7 +335,6 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
         
-        // Finally remove the view logic
         if (::openGlView.isInitialized) {
             try {
                 windowManager.removeView(openGlView)
@@ -338,7 +342,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 e.printStackTrace()
             }
         }
-        stopForeground(true)
+        
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     private fun updateOverlaySize() {
@@ -346,11 +351,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         
         val layoutParams = openGlView.layoutParams as WindowManager.LayoutParams
         if (showPreview) {
-             // Show resized preview, e.g. 320x240 or aspect ratio
              layoutParams.width = 320
              layoutParams.height = 240
         } else {
-             // "Hide" it by making it 1x1 pixel
              layoutParams.width = 1
              layoutParams.height = 1
         }

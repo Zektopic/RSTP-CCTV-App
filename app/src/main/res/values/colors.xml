@@ -1,10 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Primary Teal -->
+    <color name="teal_600">#FF00897B</color>
+    <color name="teal_700">#FF00695C</color>
+    <color name="teal_800">#FF004D40</color>
+    <color name="teal_200">#FF80CBC4</color>
+
+    <!-- Cyan Accent -->
+    <color name="cyan_400">#FF26C6DA</color>
+    <color name="cyan_200">#FF80DEEA</color>
+
+    <!-- Neutrals -->
+    <color name="surface_light">#FFF8FAF9</color>
+    <color name="surface_dark">#FF121212</color>
+    <color name="card_light">#FFFFFFFF</color>
+    <color name="card_dark">#FF1E1E1E</color>
+    <color name="on_surface_light">#FF1B1B1F</color>
+    <color name="on_surface_dark">#FFE6E1E5</color>
+
+    <!-- Status -->
+    <color name="status_green">#FF4CAF50</color>
+    <color name="status_red">#FFE53935</color>
+    <color name="status_amber">#FFFFC107</color>
+
+    <!-- Legacy (kept for compatibility) -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>
