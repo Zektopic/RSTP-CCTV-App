@@ -16,7 +16,10 @@ class WebServer(
     private val onCodecUpdate: (String) -> Unit,
     private val getCurrentCodec: () -> String,
     private val onResolutionUpdate: (Int, Int) -> Unit,
-    private val getCurrentResolution: () -> String
+    private val getCurrentResolution: () -> String,
+    private val getAuthEnabled: () -> Boolean,
+    private val getUsername: () -> String,
+    private val getPassword: () -> String
 ) : NanoHTTPD(8080) {
 
     override fun serve(session: IHTTPSession): Response {
@@ -72,7 +75,14 @@ class WebServer(
             val streaming = isStreaming()
             val codec = getCurrentCodec()
             val resolution = getCurrentResolution()
-            val json = """{"streaming":$streaming,"codec":"$codec","resolution":"$resolution"}"""
+            val authEnabled = getAuthEnabled()
+            val username = getUsername()
+            val rtspUrl = if (authEnabled && username.isNotEmpty() && getPassword().isNotEmpty()) {
+                "rtsp://$username:${getPassword()}@$ipAddress:8554/stream"
+            } else {
+                "rtsp://$ipAddress:8554/stream"
+            }
+            val json = """{"streaming":$streaming,"codec":"$codec","resolution":"$resolution","authEnabled":$authEnabled,"rtspUrl":"$rtspUrl"}"""
             val response = newFixedLengthResponse(Response.Status.OK, "application/json", json)
             response.addHeader("Access-Control-Allow-Origin", "*")
             return response
@@ -97,7 +107,20 @@ class WebServer(
         return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not Found")
     }
 
+    private fun buildRtspUrl(): String {
+        val authOn = getAuthEnabled()
+        val user = getUsername()
+        val pass = getPassword()
+        return if (authOn && user.isNotEmpty() && pass.isNotEmpty()) {
+            "rtsp://$user:$pass@$ipAddress:8554/stream"
+        } else {
+            "rtsp://$ipAddress:8554/stream"
+        }
+    }
+
     private fun buildDashboardHtml(): String {
+        val rtspUrl = buildRtspUrl()
+        val authBadgeDisplay = if (getAuthEnabled() && getUsername().isNotEmpty()) "inline" else "none"
         return """
 <!DOCTYPE html>
 <html lang="en">
@@ -498,8 +521,8 @@ class WebServer(
             <h3>Connection</h3>
             <div class="url-row">
                 <div>
-                    <div class="url-label">RTSP Stream</div>
-                    <div class="url-value" id="rtspUrl">rtsp://$ipAddress:8554/stream</div>
+                    <div class="url-label">RTSP Stream<span id="authBadge" style="display:$authBadgeDisplay;margin-left:8px;padding:2px 8px;border-radius:8px;background:var(--accent-glow);color:var(--accent);font-size:10px;font-weight:600">AUTH</span></div>
+                    <div class="url-value" id="rtspUrl">$rtspUrl</div>
                 </div>
                 <button class="copy-btn" onclick="copyUrl('rtspUrl')" title="Copy">
                     <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
@@ -554,11 +577,20 @@ class WebServer(
                     chipCodec.textContent = data.codec;
                     chipRes.textContent = data.resolution;
                     
+                    // Update RTSP URL dynamically
+                    if (data.rtspUrl) {
+                        document.getElementById('rtspUrl').textContent = data.rtspUrl;
+                    }
+                    var authBadge = document.getElementById('authBadge');
+                    if (authBadge) {
+                        authBadge.style.display = data.authEnabled ? 'inline' : 'none';
+                    }
+                    
                     // Sync dropdowns
                     document.getElementById('codecSelect').value = data.codec;
                     document.getElementById('resSelect').value = data.resolution;
                 })
-                .catch(() => {});
+                .catch(function() {});
         }
         fetchStatus();
         setInterval(fetchStatus, 2000);

@@ -23,4 +23,24 @@
     <string name="copy_url">Copy URL</string>
     <string name="url_copied">URL copied to clipboard</string>
     <string name="settings_saved">Settings saved</string>
+
+    <!-- Authentication strings -->
+    <string name="section_auth">Authentication</string>
+    <string name="enable_auth">Enable Authentication</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="generate_password">Generate</string>
+    <string name="password_generated">Password generated</string>
+
+    <!-- Overlay strings -->
+    <string name="section_overlay">Overlay</string>
+    <string name="show_timestamp">Show Timestamp</string>
+    <string name="show_date">Show Date</string>
+    <string name="overlay_position">Overlay Position</string>
+    <string name="overlay_size">Text Size</string>
+
+    <!-- Flashlight & Night Mode strings -->
+    <string name="section_camera_controls">Camera Controls</string>
+    <string name="flashlight_toggle">Flashlight</string>
+    <string name="night_mode_toggle">Night Mode (Auto Flash)</string>
 </resources>

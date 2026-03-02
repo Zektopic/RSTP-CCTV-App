@@ -67,4 +67,83 @@ object AppPreferences {
     fun setUseBackCamera(context: Context, useBack: Boolean) {
         prefs(context).edit().putBoolean(KEY_USE_BACK_CAMERA, useBack).apply()
     }
+
+    // --- RTSP Authentication ---
+    private const val KEY_AUTH_ENABLED = "rtsp_auth_enabled"
+    private const val KEY_AUTH_USERNAME = "rtsp_username"
+    private const val KEY_AUTH_PASSWORD = "rtsp_password"
+
+    fun getAuthEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTH_ENABLED, false)
+
+    fun setAuthEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTH_ENABLED, enabled).apply()
+    }
+
+    fun getUsername(context: Context): String =
+        prefs(context).getString(KEY_AUTH_USERNAME, "") ?: ""
+
+    fun setUsername(context: Context, username: String) {
+        prefs(context).edit().putString(KEY_AUTH_USERNAME, username).apply()
+    }
+
+    fun getPassword(context: Context): String =
+        prefs(context).getString(KEY_AUTH_PASSWORD, "") ?: ""
+
+    fun setPassword(context: Context, password: String) {
+        prefs(context).edit().putString(KEY_AUTH_PASSWORD, password).apply()
+    }
+
+    // --- Timestamp Overlay ---
+    private const val KEY_SHOW_TIMESTAMP = "show_timestamp"
+    private const val KEY_SHOW_DATE = "show_date"
+    private const val KEY_TIMESTAMP_POSITION = "timestamp_position"
+
+    fun getShowTimestamp(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SHOW_TIMESTAMP, false)
+
+    fun setShowTimestamp(context: Context, show: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SHOW_TIMESTAMP, show).apply()
+    }
+
+    fun getShowDate(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SHOW_DATE, false)
+
+    fun setShowDate(context: Context, show: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SHOW_DATE, show).apply()
+    }
+
+    fun getTimestampPosition(context: Context): String =
+        prefs(context).getString(KEY_TIMESTAMP_POSITION, "Top Left") ?: "Top Left"
+
+    fun setTimestampPosition(context: Context, position: String) {
+        prefs(context).edit().putString(KEY_TIMESTAMP_POSITION, position).apply()
+    }
+
+    private const val KEY_TIMESTAMP_SIZE = "timestamp_size"
+
+    fun getTimestampSize(context: Context): String =
+        prefs(context).getString(KEY_TIMESTAMP_SIZE, "Medium") ?: "Medium"
+
+    fun setTimestampSize(context: Context, size: String) {
+        prefs(context).edit().putString(KEY_TIMESTAMP_SIZE, size).apply()
+    }
+
+    // --- Flashlight & Night Mode ---
+    private const val KEY_FLASHLIGHT_ENABLED = "flashlight_enabled"
+    private const val KEY_NIGHT_MODE_ENABLED = "night_mode_enabled"
+
+    fun getFlashlightEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_FLASHLIGHT_ENABLED, false)
+
+    fun setFlashlightEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_FLASHLIGHT_ENABLED, enabled).apply()
+    }
+
+    fun getNightModeEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_NIGHT_MODE_ENABLED, false)
+
+    fun setNightModeEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_NIGHT_MODE_ENABLED, enabled).apply()
+    }
 }

@@ -29,6 +29,8 @@ class MainActivity : AppCompatActivity() {
 
     private val resolutions = arrayOf("640x480", "1280x720", "1920x1080")
     private val codecs = arrayOf("H264", "H265", "VP9", "AV1")
+    private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
+    private val overlaySizes = arrayOf("Small", "Medium", "Large")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +58,14 @@ class MainActivity : AppCompatActivity() {
         (binding.spinnerCodec as? AutoCompleteTextView)?.setAdapter(
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, codecs)
         )
+
+        (binding.spinnerOverlayPosition as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, overlayPositions)
+        )
+
+        (binding.spinnerOverlaySize as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, overlaySizes)
+        )
     }
 
     private fun loadSavedSettings() {
@@ -76,6 +86,37 @@ class MainActivity : AppCompatActivity() {
         // Load saved toggles
         binding.switchForceSoftware.isChecked = AppPreferences.getForceSoftware(this)
         binding.switchPreview.isChecked = AppPreferences.getShowPreview(this)
+
+        // Load saved auth settings
+        val authEnabled = AppPreferences.getAuthEnabled(this)
+        binding.switchAuth.isChecked = authEnabled
+        binding.editUsername.setText(AppPreferences.getUsername(this))
+        binding.editPassword.setText(AppPreferences.getPassword(this))
+        setAuthFieldsEnabled(authEnabled)
+
+        // Load saved overlay settings
+        binding.switchTimestamp.isChecked = AppPreferences.getShowTimestamp(this)
+        binding.switchDate.isChecked = AppPreferences.getShowDate(this)
+        val savedPosition = AppPreferences.getTimestampPosition(this)
+        (binding.spinnerOverlayPosition as? AutoCompleteTextView)?.setText(
+            if (savedPosition in overlayPositions) savedPosition else overlayPositions.first(), false
+        )
+        val savedSize = AppPreferences.getTimestampSize(this)
+        (binding.spinnerOverlaySize as? AutoCompleteTextView)?.setText(
+            if (savedSize in overlaySizes) savedSize else overlaySizes[1], false
+        )
+
+        // Load saved flashlight & night mode settings
+        binding.switchFlashlight.isChecked = AppPreferences.getFlashlightEnabled(this)
+        binding.switchNightMode.isChecked = AppPreferences.getNightModeEnabled(this)
+    }
+
+    private fun setAuthFieldsEnabled(enabled: Boolean) {
+        binding.layoutUsername.isEnabled = enabled
+        binding.editUsername.isEnabled = enabled
+        binding.layoutPassword.isEnabled = enabled
+        binding.editPassword.isEnabled = enabled
+        binding.btnGeneratePassword.isEnabled = enabled
     }
 
     private fun setupListeners() {
@@ -122,6 +163,60 @@ class MainActivity : AppCompatActivity() {
             restartServer()
         }
 
+        // Auth listeners
+        binding.switchAuth.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setAuthEnabled(this, isChecked)
+            setAuthFieldsEnabled(isChecked)
+            updateNetworkInfo()
+            restartServer()
+        }
+
+        binding.editUsername.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                AppPreferences.setUsername(this, binding.editUsername.text.toString())
+                updateNetworkInfo()
+                restartServer()
+            }
+        }
+
+        binding.editPassword.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                AppPreferences.setPassword(this, binding.editPassword.text.toString())
+                updateNetworkInfo()
+                restartServer()
+            }
+        }
+
+        binding.btnGeneratePassword.setOnClickListener {
+            val password = generateRandomPassword(10)
+            binding.editPassword.setText(password)
+            AppPreferences.setPassword(this, password)
+            updateNetworkInfo()
+            restartServer()
+            Toast.makeText(this, R.string.password_generated, Toast.LENGTH_SHORT).show()
+        }
+
+        // Overlay listeners
+        binding.switchTimestamp.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setShowTimestamp(this, isChecked)
+            restartServer()
+        }
+
+        binding.switchDate.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setShowDate(this, isChecked)
+            restartServer()
+        }
+
+        (binding.spinnerOverlayPosition as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            AppPreferences.setTimestampPosition(this, overlayPositions[position])
+            restartServer()
+        }
+
+        (binding.spinnerOverlaySize as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            AppPreferences.setTimestampSize(this, overlaySizes[position])
+            restartServer()
+        }
+
         // Copy buttons
         binding.btnCopyRtsp.setOnClickListener {
             copyToClipboard("RTSP URL", binding.textRtspUrl.text.toString())
@@ -129,6 +224,29 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnCopyWeb.setOnClickListener {
             copyToClipboard("Web URL", binding.textWebUrl.text.toString())
+        }
+
+        // Flashlight & Night Mode listeners
+        binding.switchFlashlight.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setFlashlightEnabled(this, isChecked)
+            if (binding.switchServer.isChecked) {
+                val intent = Intent(this, CctvServerService::class.java).apply {
+                    action = "ACTION_TOGGLE_FLASHLIGHT"
+                    putExtra("flashlight_enabled", isChecked)
+                }
+                startService(intent)
+            }
+        }
+
+        binding.switchNightMode.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setNightModeEnabled(this, isChecked)
+            if (binding.switchServer.isChecked) {
+                val intent = Intent(this, CctvServerService::class.java).apply {
+                    action = "ACTION_TOGGLE_NIGHT_MODE"
+                    putExtra("night_mode_enabled", isChecked)
+                }
+                startService(intent)
+            }
         }
     }
 
@@ -167,6 +285,15 @@ class MainActivity : AppCompatActivity() {
             putExtra("show_preview", binding.switchPreview.isChecked)
             putExtra("width", width)
             putExtra("height", height)
+            putExtra("auth_enabled", binding.switchAuth.isChecked)
+            putExtra("auth_username", binding.editUsername.text.toString())
+            putExtra("auth_password", binding.editPassword.text.toString())
+            putExtra("show_timestamp", binding.switchTimestamp.isChecked)
+            putExtra("show_date", binding.switchDate.isChecked)
+            putExtra("timestamp_position", binding.spinnerOverlayPosition.text.toString())
+            putExtra("timestamp_size", binding.spinnerOverlaySize.text.toString())
+            putExtra("flashlight_enabled", binding.switchFlashlight.isChecked)
+            putExtra("night_mode_enabled", binding.switchNightMode.isChecked)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -200,12 +327,24 @@ class MainActivity : AppCompatActivity() {
 
         // Set RTSP and Web URLs
         if (ipv4Address != null) {
-            binding.textRtspUrl.text = "rtsp://$ip:8554/stream"
+            val authEnabled = AppPreferences.getAuthEnabled(this)
+            val username = AppPreferences.getUsername(this)
+            val password = AppPreferences.getPassword(this)
+            if (authEnabled && username.isNotEmpty() && password.isNotEmpty()) {
+                binding.textRtspUrl.text = "rtsp://$username:$password@$ip:8554/stream"
+            } else {
+                binding.textRtspUrl.text = "rtsp://$ip:8554/stream"
+            }
             binding.textWebUrl.text = "http://$ip:8080"
         } else {
             binding.textRtspUrl.text = getString(R.string.ip_not_available)
             binding.textWebUrl.text = getString(R.string.ip_not_available)
         }
+    }
+
+    private fun generateRandomPassword(length: Int): String {
+        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        return (1..length).map { chars.random() }.joinToString("")
     }
 
     private fun requestPermissionsIfNeeded() {
