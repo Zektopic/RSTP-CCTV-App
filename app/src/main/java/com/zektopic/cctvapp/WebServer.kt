@@ -19,7 +19,18 @@ class WebServer(
     private val getCurrentResolution: () -> String,
     private val getAuthEnabled: () -> Boolean,
     private val getUsername: () -> String,
-    private val getPassword: () -> String
+    private val getPassword: () -> String,
+    // New setting callbacks
+    private val onSettingUpdate: (String, String) -> Unit,
+    private val getShowTimestamp: () -> Boolean,
+    private val getShowDate: () -> Boolean,
+    private val getTimestampPosition: () -> String,
+    private val getTimestampSize: () -> String,
+    private val getFlashlightEnabled: () -> Boolean,
+    private val getNightModeEnabled: () -> Boolean,
+    private val getForceSoftware: () -> Boolean,
+    private val getShowPreview: () -> Boolean,
+    private val onAuthUpdate: (Boolean, String, String) -> Unit
 ) : NanoHTTPD(8080) {
 
     override fun serve(session: IHTTPSession): Response {
@@ -70,6 +81,26 @@ class WebServer(
             return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "Resolution Updated")
         }
 
+        // Generic setting update endpoint
+        if (uri == "/action/set-setting") {
+            val key = session.parameters["key"]?.get(0) ?: ""
+            val value = session.parameters["value"]?.get(0) ?: ""
+            if (key.isNotEmpty()) {
+                onSettingUpdate(key, value)
+                return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "Setting Updated: $key")
+            }
+            return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Missing key")
+        }
+
+        // Auth update endpoint
+        if (uri == "/action/set-auth") {
+            val enabled = session.parameters["enabled"]?.get(0)?.toBoolean() ?: false
+            val username = session.parameters["username"]?.get(0) ?: ""
+            val password = session.parameters["password"]?.get(0) ?: ""
+            onAuthUpdate(enabled, username, password)
+            return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "Auth Updated")
+        }
+
         // JSON status endpoint
         if (uri == "/status") {
             val streaming = isStreaming()
@@ -77,12 +108,23 @@ class WebServer(
             val resolution = getCurrentResolution()
             val authEnabled = getAuthEnabled()
             val username = getUsername()
-            val rtspUrl = if (authEnabled && username.isNotEmpty() && getPassword().isNotEmpty()) {
-                "rtsp://$username:${getPassword()}@$ipAddress:8554/stream"
-            } else {
-                "rtsp://$ipAddress:8554/stream"
-            }
-            val json = """{"streaming":$streaming,"codec":"$codec","resolution":"$resolution","authEnabled":$authEnabled,"rtspUrl":"$rtspUrl"}"""
+            val rtspUrl = buildRtspUrl()
+            val json = """{
+                "streaming":$streaming,
+                "codec":"$codec",
+                "resolution":"$resolution",
+                "authEnabled":$authEnabled,
+                "username":"${escapeJson(username)}",
+                "rtspUrl":"${escapeJson(rtspUrl)}",
+                "showTimestamp":${getShowTimestamp()},
+                "showDate":${getShowDate()},
+                "timestampPosition":"${getTimestampPosition()}",
+                "timestampSize":"${getTimestampSize()}",
+                "flashlightEnabled":${getFlashlightEnabled()},
+                "nightModeEnabled":${getNightModeEnabled()},
+                "forceSoftware":${getForceSoftware()},
+                "showPreview":${getShowPreview()}
+            }""".trimIndent()
             val response = newFixedLengthResponse(Response.Status.OK, "application/json", json)
             response.addHeader("Access-Control-Allow-Origin", "*")
             return response
@@ -106,6 +148,8 @@ class WebServer(
 
         return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not Found")
     }
+
+    private fun escapeJson(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
 
     private fun buildRtspUrl(): String {
         val authOn = getAuthEnabled()
@@ -323,6 +367,11 @@ class WebServer(
             font-size: 14px;
             font-weight: 500;
         }
+        .setting-sublabel {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
         
         /* Custom Select */
         .select-wrap {
@@ -357,7 +406,7 @@ class WebServer(
         }
         
         /* Toggle Switch */
-        .toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .toggle { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
         .toggle input { opacity: 0; width: 0; height: 0; }
         .toggle-track {
             position: absolute; cursor: pointer;
@@ -379,6 +428,24 @@ class WebServer(
         .toggle input:checked + .toggle-track { background: var(--accent); }
         .toggle input:checked + .toggle-track::before { transform: translateX(20px); }
         
+        /* Text Input */
+        .text-input {
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            outline: none;
+            width: 140px;
+            transition: border-color 0.2s;
+        }
+        .text-input:hover { border-color: rgba(255,255,255,0.15); }
+        .text-input:focus { border-color: var(--accent); }
+        .text-input::placeholder { color: var(--text-secondary); }
+
         /* Info Card */
         .info-card {
             background: var(--surface);
@@ -490,9 +557,9 @@ class WebServer(
             </div>
         </div>
         
-        <!-- Settings -->
+        <!-- Video Settings -->
         <div class="settings-card">
-            <h3>Settings</h3>
+            <h3>Video Settings</h3>
             <div class="setting-row">
                 <span class="setting-label">Codec</span>
                 <div class="select-wrap">
@@ -511,8 +578,108 @@ class WebServer(
                         <option value="640x480">480p</option>
                         <option value="1280x720">720p</option>
                         <option value="1920x1080">1080p</option>
+                        <option value="0x0">Max</option>
                     </select>
                 </div>
+            </div>
+            <div class="setting-row">
+                <div>
+                    <span class="setting-label">Force Software Codec</span>
+                    <div class="setting-sublabel">Use software encoder instead of hardware</div>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleForceSoftware" onchange="setSetting('force_software', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">Show Preview</span>
+                <label class="toggle">
+                    <input type="checkbox" id="togglePreview" onchange="setSetting('show_preview', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Overlay Settings -->
+        <div class="settings-card">
+            <h3>Overlay</h3>
+            <div class="setting-row">
+                <span class="setting-label">Show Timestamp</span>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleTimestamp" onchange="setSetting('show_timestamp', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">Show Date</span>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleDate" onchange="setSetting('show_date', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">Position</span>
+                <div class="select-wrap">
+                    <select id="posSelect" onchange="setSetting('timestamp_position', this.value)">
+                        <option value="Top Left">Top Left</option>
+                        <option value="Top Right">Top Right</option>
+                        <option value="Bottom Left">Bottom Left</option>
+                        <option value="Bottom Right">Bottom Right</option>
+                    </select>
+                </div>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">Text Size</span>
+                <div class="select-wrap">
+                    <select id="sizeSelect" onchange="setSetting('timestamp_size', this.value)">
+                        <option value="Small">Small</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Large">Large</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera Controls -->
+        <div class="settings-card">
+            <h3>Camera Controls</h3>
+            <div class="setting-row">
+                <span class="setting-label">Flashlight</span>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleFlashlight" onchange="setSetting('flashlight_enabled', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row">
+                <div>
+                    <span class="setting-label">Night Mode</span>
+                    <div class="setting-sublabel">Auto flash when dark</div>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleNightMode" onchange="setSetting('night_mode_enabled', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Authentication -->
+        <div class="settings-card">
+            <h3>Authentication</h3>
+            <div class="setting-row">
+                <span class="setting-label">Enable Auth</span>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleAuth" onchange="updateAuth()">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">Username</span>
+                <input type="text" class="text-input" id="authUsername" placeholder="username" onchange="updateAuth()">
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">Password</span>
+                <input type="text" class="text-input" id="authPassword" placeholder="password" onchange="updateAuth()">
             </div>
         </div>
         
@@ -551,6 +718,7 @@ class WebServer(
         }, 500);
         
         // --- Status polling ---
+        let initialLoad = true;
         function fetchStatus() {
             fetch('/status')
                 .then(r => r.json())
@@ -577,6 +745,27 @@ class WebServer(
                     chipCodec.textContent = data.codec;
                     chipRes.textContent = data.resolution;
                     
+                    // Sync dropdowns
+                    document.getElementById('codecSelect').value = data.codec;
+                    document.getElementById('resSelect').value = data.resolution;
+                    
+                    // Sync toggles
+                    document.getElementById('toggleForceSoftware').checked = data.forceSoftware;
+                    document.getElementById('togglePreview').checked = data.showPreview;
+                    document.getElementById('toggleTimestamp').checked = data.showTimestamp;
+                    document.getElementById('toggleDate').checked = data.showDate;
+                    document.getElementById('posSelect').value = data.timestampPosition;
+                    document.getElementById('sizeSelect').value = data.timestampSize;
+                    document.getElementById('toggleFlashlight').checked = data.flashlightEnabled;
+                    document.getElementById('toggleNightMode').checked = data.nightModeEnabled;
+                    
+                    // Sync auth
+                    document.getElementById('toggleAuth').checked = data.authEnabled;
+                    if (initialLoad) {
+                        document.getElementById('authUsername').value = data.username || '';
+                        initialLoad = false;
+                    }
+                    
                     // Update RTSP URL dynamically
                     if (data.rtspUrl) {
                         document.getElementById('rtspUrl').textContent = data.rtspUrl;
@@ -585,15 +774,11 @@ class WebServer(
                     if (authBadge) {
                         authBadge.style.display = data.authEnabled ? 'inline' : 'none';
                     }
-                    
-                    // Sync dropdowns
-                    document.getElementById('codecSelect').value = data.codec;
-                    document.getElementById('resSelect').value = data.resolution;
                 })
                 .catch(function() {});
         }
         fetchStatus();
-        setInterval(fetchStatus, 2000);
+        setInterval(fetchStatus, 3000);
         
         // --- Actions ---
         function toggleStream() {
@@ -607,15 +792,28 @@ class WebServer(
                 .then(() => showToast('Camera switched'));
         }
         
-        function changeCodec(val) {
-            fetch('/action/set-codec?codec=' + val)
-                .then(() => { showToast('Codec: ' + val); fetchStatus(); });
+        function changeCodec(v) {
+            fetch('/action/set-codec?codec=' + v)
+                .then(() => { showToast('Codec: ' + v); fetchStatus(); });
         }
         
-        function changeResolution(val) {
-            const [w, h] = val.split('x');
+        function changeResolution(v) {
+            const [w, h] = v.split('x');
             fetch('/action/set-resolution?w=' + w + '&h=' + h)
-                .then(() => { showToast('Resolution: ' + val); fetchStatus(); });
+                .then(() => { showToast(v === '0x0' ? 'Resolution: Max' : 'Resolution: ' + v); fetchStatus(); });
+        }
+        
+        function setSetting(key, value) {
+            fetch('/action/set-setting?key=' + encodeURIComponent(key) + '&value=' + encodeURIComponent(value))
+                .then(() => { showToast(key.replace(/_/g, ' ') + ': ' + value); fetchStatus(); });
+        }
+
+        function updateAuth() {
+            const enabled = document.getElementById('toggleAuth').checked;
+            const username = document.getElementById('authUsername').value;
+            const password = document.getElementById('authPassword').value;
+            fetch('/action/set-auth?enabled=' + enabled + '&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password))
+                .then(() => { showToast('Auth ' + (enabled ? 'enabled' : 'disabled')); fetchStatus(); });
         }
         
         function copyUrl(id) {

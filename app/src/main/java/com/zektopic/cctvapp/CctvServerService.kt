@@ -186,10 +186,82 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     }
                 }
             },
-            getCurrentResolution = { "${videoWidth}x${videoHeight}" },
+            getCurrentResolution = { 
+                if (videoWidth == 0 && videoHeight == 0) "0x0" else "${videoWidth}x${videoHeight}"
+            },
             getAuthEnabled = { authEnabled },
             getUsername = { authUsername },
-            getPassword = { authPassword }
+            getPassword = { authPassword },
+            onSettingUpdate = { key, value ->
+                when (key) {
+                    "show_timestamp" -> {
+                        showTimestamp = value.toBoolean()
+                        AppPreferences.setShowTimestamp(this, showTimestamp)
+                        applyTimestampOverlay()
+                    }
+                    "show_date" -> {
+                        showDate = value.toBoolean()
+                        AppPreferences.setShowDate(this, showDate)
+                        applyTimestampOverlay()
+                    }
+                    "timestamp_position" -> {
+                        timestampPosition = value
+                        AppPreferences.setTimestampPosition(this, timestampPosition)
+                        applyTimestampOverlay()
+                    }
+                    "timestamp_size" -> {
+                        timestampSize = value
+                        AppPreferences.setTimestampSize(this, timestampSize)
+                        applyTimestampOverlay()
+                    }
+                    "flashlight_enabled" -> {
+                        flashlightEnabled = value.toBoolean()
+                        AppPreferences.setFlashlightEnabled(this, flashlightEnabled)
+                        applyFlashlight()
+                    }
+                    "night_mode_enabled" -> {
+                        nightModeEnabled = value.toBoolean()
+                        AppPreferences.setNightModeEnabled(this, nightModeEnabled)
+                        updateNightModeSensor()
+                    }
+                    "force_software" -> {
+                        forceSoftware = value.toBoolean()
+                        AppPreferences.setForceSoftware(this, forceSoftware)
+                        if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+                            rtspServerCamera.stopStream()
+                            startStream()
+                        }
+                    }
+                    "show_preview" -> {
+                        showPreview = value.toBoolean()
+                        AppPreferences.setShowPreview(this, showPreview)
+                        updateOverlaySize()
+                    }
+                }
+            },
+            getShowTimestamp = { showTimestamp },
+            getShowDate = { showDate },
+            getTimestampPosition = { timestampPosition },
+            getTimestampSize = { timestampSize },
+            getFlashlightEnabled = { flashlightEnabled },
+            getNightModeEnabled = { nightModeEnabled },
+            getForceSoftware = { forceSoftware },
+            getShowPreview = { showPreview },
+            onAuthUpdate = { enabled, username, password ->
+                authEnabled = enabled
+                authUsername = username
+                authPassword = password
+                AppPreferences.setAuthEnabled(this, enabled)
+                AppPreferences.setUsername(this, username)
+                AppPreferences.setPassword(this, password)
+                if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+                    if (enabled && username.isNotEmpty() && password.isNotEmpty()) {
+                        rtspServerCamera.getStreamClient().setAuthorization(username, password)
+                    } else {
+                        rtspServerCamera.getStreamClient().setAuthorization("", "")
+                    }
+                }
+            }
         )
         webServer.start()
         snapshotHandler.post(snapshotRunnable)
