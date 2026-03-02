@@ -1,3 +1,26 @@
 <resources>
     <string name="app_name">RTSP CCTV APP</string>
+    <string name="cctv_server_title">CCTV Server</string>
+    <string name="enable_server">Enable Server</string>
+    <string name="video_codec">Video Codec</string>
+    <string name="force_software_codec">Force Software Codec</string>
+    <string name="resolution">Resolution</string>
+    <string name="switch_camera">Switch Camera</string>
+    <string name="show_preview">Show Preview</string>
+    <string name="device_ip_address">Device IP Address:</string>
+    <string name="stream_url_guide">You can view the stream at rtsp://[YOUR_IP]:8554/stream</string>
+    <string name="overlay_permission_toast">Please grant \'Display over other apps\' permission</string>
+    <string name="ip_not_available">Not available</string>
+
+    <!-- New UI strings -->
+    <string name="section_server">Server Control</string>
+    <string name="section_video">Video Settings</string>
+    <string name="section_network">Network Info</string>
+    <string name="status_streaming">Streaming</string>
+    <string name="status_stopped">Stopped</string>
+    <string name="rtsp_url_label">RTSP Stream URL</string>
+    <string name="web_url_label">Web Dashboard</string>
+    <string name="copy_url">Copy URL</string>
+    <string name="url_copied">URL copied to clipboard</string>
+    <string name="settings_saved">Settings saved</string>
 </resources>

@@ -1,0 +1,70 @@
+package com.zektopic.cctvapp
+
+import android.content.Context
+import android.content.SharedPreferences
+
+/**
+ * Centralized SharedPreferences helper for persisting user settings
+ * across app restarts, service restarts, and device reboots.
+ */
+object AppPreferences {
+
+    private const val PREFS_NAME = "cctv_app_prefs"
+
+    private const val KEY_VIDEO_CODEC = "video_codec"
+    private const val KEY_VIDEO_WIDTH = "video_width"
+    private const val KEY_VIDEO_HEIGHT = "video_height"
+    private const val KEY_FORCE_SOFTWARE = "force_software"
+    private const val KEY_SHOW_PREVIEW = "show_preview"
+    private const val KEY_USE_BACK_CAMERA = "use_back_camera"
+
+    private fun prefs(context: Context): SharedPreferences {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+
+    // --- Video Codec ---
+    fun getVideoCodec(context: Context): String =
+        prefs(context).getString(KEY_VIDEO_CODEC, "H264") ?: "H264"
+
+    fun setVideoCodec(context: Context, codec: String) {
+        prefs(context).edit().putString(KEY_VIDEO_CODEC, codec).apply()
+    }
+
+    // --- Resolution ---
+    fun getVideoWidth(context: Context): Int =
+        prefs(context).getInt(KEY_VIDEO_WIDTH, 640)
+
+    fun getVideoHeight(context: Context): Int =
+        prefs(context).getInt(KEY_VIDEO_HEIGHT, 480)
+
+    fun setResolution(context: Context, width: Int, height: Int) {
+        prefs(context).edit()
+            .putInt(KEY_VIDEO_WIDTH, width)
+            .putInt(KEY_VIDEO_HEIGHT, height)
+            .apply()
+    }
+
+    // --- Force Software Codec ---
+    fun getForceSoftware(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_FORCE_SOFTWARE, false)
+
+    fun setForceSoftware(context: Context, force: Boolean) {
+        prefs(context).edit().putBoolean(KEY_FORCE_SOFTWARE, force).apply()
+    }
+
+    // --- Show Preview ---
+    fun getShowPreview(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SHOW_PREVIEW, false)
+
+    fun setShowPreview(context: Context, show: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SHOW_PREVIEW, show).apply()
+    }
+
+    // --- Camera Selection ---
+    fun getUseBackCamera(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_USE_BACK_CAMERA, true)
+
+    fun setUseBackCamera(context: Context, useBack: Boolean) {
+        prefs(context).edit().putBoolean(KEY_USE_BACK_CAMERA, useBack).apply()
+    }
+}
