@@ -8,7 +8,10 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.ImageFormat
 import android.graphics.PixelFormat
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -366,6 +369,14 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             }
             
             if (!rtspServerCamera.isStreaming) {
+                // Resolve max resolution if needed
+                if (videoWidth == 0 || videoHeight == 0) {
+                    val maxRes = getMaxCameraResolution()
+                    videoWidth = maxRes.first
+                    videoHeight = maxRes.second
+                    android.util.Log.d("CctvServerService", "Max resolution detected: ${videoWidth}x${videoHeight}")
+                }
+
                 // Dynamic Bitrate Calculation
                 val bitrate = when {
                     videoWidth >= 1920 -> 6000 * 1024
@@ -493,6 +504,28 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             parts.add(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(now))
         }
         return parts.joinToString(" ")
+    }
+
+    private fun getMaxCameraResolution(): Pair<Int, Int> {
+        try {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = cameraManager.cameraIdList.firstOrNull() ?: return Pair(1920, 1080)
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            // Use SurfaceTexture sizes — these are video-encoder compatible
+            val sizes = map?.getOutputSizes(android.graphics.SurfaceTexture::class.java)
+                ?: return Pair(1920, 1080)
+            // Cap at 4K (3840x2160) to avoid encoder failures
+            val maxPixels = 3840 * 2160
+            val validSizes = sizes.filter { it.width * it.height <= maxPixels }
+            val maxSize = (if (validSizes.isNotEmpty()) validSizes else sizes.toList())
+                .maxByOrNull { it.width * it.height } ?: return Pair(1920, 1080)
+            android.util.Log.d("CctvServerService", "Camera max video size: ${maxSize.width}x${maxSize.height}")
+            return Pair(maxSize.width, maxSize.height)
+        } catch (e: Exception) {
+            android.util.Log.e("CctvServerService", "Failed to get max resolution", e)
+            return Pair(1920, 1080)
+        }
     }
 
     private fun applyFlashlight() {
