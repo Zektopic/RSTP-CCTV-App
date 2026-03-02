@@ -509,16 +509,22 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private fun getMaxCameraResolution(): Pair<Int, Int> {
         try {
             val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            // Use back camera (ID "0") by default
             val cameraId = cameraManager.cameraIdList.firstOrNull() ?: return Pair(1920, 1080)
             val characteristics = cameraManager.getCameraCharacteristics(cameraId)
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-            val sizes = map?.getOutputSizes(ImageFormat.JPEG) ?: return Pair(1920, 1080)
-            val maxSize = sizes.maxByOrNull { it.width * it.height } ?: return Pair(1920, 1080)
+            // Use SurfaceTexture sizes — these are video-encoder compatible
+            val sizes = map?.getOutputSizes(android.graphics.SurfaceTexture::class.java)
+                ?: return Pair(1920, 1080)
+            // Cap at 4K (3840x2160) to avoid encoder failures
+            val maxPixels = 3840 * 2160
+            val validSizes = sizes.filter { it.width * it.height <= maxPixels }
+            val maxSize = (if (validSizes.isNotEmpty()) validSizes else sizes.toList())
+                .maxByOrNull { it.width * it.height } ?: return Pair(1920, 1080)
+            android.util.Log.d("CctvServerService", "Camera max video size: ${maxSize.width}x${maxSize.height}")
             return Pair(maxSize.width, maxSize.height)
         } catch (e: Exception) {
             android.util.Log.e("CctvServerService", "Failed to get max resolution", e)
-            return Pair(1920, 1080)  // Fallback
+            return Pair(1920, 1080)
         }
     }
 
