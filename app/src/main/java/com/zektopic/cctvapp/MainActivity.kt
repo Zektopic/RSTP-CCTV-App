@@ -27,7 +27,7 @@ class MainActivity : AppCompatActivity() {
     private val permissions = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
     private val permissionRequestCode = 100
 
-    private val resolutions = arrayOf("640x480", "1280x720", "1920x1080")
+    private val resolutions = arrayOf("640x480", "1280x720", "1920x1080", "Max")
     private val codecs = arrayOf("H264", "H265", "VP9", "AV1")
     private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
     private val overlaySizes = arrayOf("Small", "Medium", "Large")
@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity() {
         // Load saved resolution
         val savedWidth = AppPreferences.getVideoWidth(this)
         val savedHeight = AppPreferences.getVideoHeight(this)
-        val savedResolution = "${savedWidth}x${savedHeight}"
+        val savedResolution = if (savedWidth == 0 && savedHeight == 0) "Max" else "${savedWidth}x${savedHeight}"
         (binding.spinnerResolution as? AutoCompleteTextView)?.setText(
             if (savedResolution in resolutions) savedResolution else resolutions.first(), false
         )
@@ -153,8 +153,12 @@ class MainActivity : AppCompatActivity() {
 
         (binding.spinnerResolution as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
             val selected = resolutions[position]
-            val parts = selected.split("x")
-            AppPreferences.setResolution(this, parts[0].toInt(), parts[1].toInt())
+            if (selected == "Max") {
+                AppPreferences.setResolution(this, 0, 0)
+            } else {
+                val parts = selected.split("x")
+                AppPreferences.setResolution(this, parts[0].toInt(), parts[1].toInt())
+            }
             restartServer()
         }
 
@@ -312,6 +316,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun getSelectedResolution(): Pair<Int, Int> {
         val selected = binding.spinnerResolution.text.toString()
+        if (selected == "Max") {
+            return Pair(0, 0)  // Sentinel: CctvServerService will detect max
+        }
         val parts = selected.split("x")
         return Pair(parts[0].toInt(), parts[1].toInt())
     }
