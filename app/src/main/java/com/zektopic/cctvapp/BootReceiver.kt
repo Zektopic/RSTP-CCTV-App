@@ -23,6 +23,9 @@ class BootReceiver : BroadcastReceiver() {
                 putExtra("show_timestamp", AppPreferences.getShowTimestamp(context))
                 putExtra("show_date", AppPreferences.getShowDate(context))
                 putExtra("timestamp_position", AppPreferences.getTimestampPosition(context))
+                putExtra("timestamp_size", AppPreferences.getTimestampSize(context))
+                putExtra("flashlight_enabled", AppPreferences.getFlashlightEnabled(context))
+                putExtra("night_mode_enabled", AppPreferences.getNightModeEnabled(context))
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

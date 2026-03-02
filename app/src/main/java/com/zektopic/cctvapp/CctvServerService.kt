@@ -9,6 +9,10 @@ import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.ConnectivityManager
 import android.os.Build
 import android.os.Handler
@@ -53,6 +57,12 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private var showTimestamp = false
     private var showDate = false
     private var timestampPosition = "Top Left"
+    private var timestampSize = "Medium"
+    private var flashlightEnabled = false
+    private var nightModeEnabled = false
+    private var isLanternOn = false
+    private var sensorManager: SensorManager? = null
+    private var lightSensor: Sensor? = null
     private var textFilter: TextObjectFilterRender? = null
     private val timestampHandler = Handler(Looper.getMainLooper())
     private val timestampRunnable = object : Runnable {
@@ -92,6 +102,13 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         showTimestamp = AppPreferences.getShowTimestamp(this)
         showDate = AppPreferences.getShowDate(this)
         timestampPosition = AppPreferences.getTimestampPosition(this)
+        timestampSize = AppPreferences.getTimestampSize(this)
+        flashlightEnabled = AppPreferences.getFlashlightEnabled(this)
+        nightModeEnabled = AppPreferences.getNightModeEnabled(this)
+
+        // Setup light sensor for night mode
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        lightSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_LIGHT)
         
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         openGlView = OpenGlView(applicationContext)
@@ -219,6 +236,20 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             return START_STICKY
         }
 
+        if (intent?.action == "ACTION_TOGGLE_FLASHLIGHT") {
+            flashlightEnabled = intent.getBooleanExtra("flashlight_enabled", false)
+            AppPreferences.setFlashlightEnabled(this, flashlightEnabled)
+            applyFlashlight()
+            return START_STICKY
+        }
+
+        if (intent?.action == "ACTION_TOGGLE_NIGHT_MODE") {
+            nightModeEnabled = intent.getBooleanExtra("night_mode_enabled", false)
+            AppPreferences.setNightModeEnabled(this, nightModeEnabled)
+            updateNightModeSensor()
+            return START_STICKY
+        }
+
         val newVideoCodec = intent?.getStringExtra("video_codec") ?: AppPreferences.getVideoCodec(this)
         val newShowPreview = intent?.getBooleanExtra("show_preview", AppPreferences.getShowPreview(this)) ?: false
         val newWidth = intent?.getIntExtra("width", AppPreferences.getVideoWidth(this)) ?: 640
@@ -230,6 +261,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         val newShowTimestamp = intent?.getBooleanExtra("show_timestamp", AppPreferences.getShowTimestamp(this)) ?: false
         val newShowDate = intent?.getBooleanExtra("show_date", AppPreferences.getShowDate(this)) ?: false
         val newTimestampPosition = intent?.getStringExtra("timestamp_position") ?: AppPreferences.getTimestampPosition(this)
+        val newTimestampSize = intent?.getStringExtra("timestamp_size") ?: AppPreferences.getTimestampSize(this)
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CCTV Server")
@@ -256,6 +288,16 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                      showPreview = newShowPreview
                      updateOverlaySize()
                 }
+                // Update overlay settings even without full restart
+                showTimestamp = newShowTimestamp
+                showDate = newShowDate
+                timestampPosition = newTimestampPosition
+                timestampSize = newTimestampSize
+                AppPreferences.setShowTimestamp(this, showTimestamp)
+                AppPreferences.setShowDate(this, showDate)
+                AppPreferences.setTimestampPosition(this, timestampPosition)
+                AppPreferences.setTimestampSize(this, timestampSize)
+                applyTimestampOverlay()
                 return START_STICKY
             }
         }
@@ -282,9 +324,19 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         showTimestamp = newShowTimestamp
         showDate = newShowDate
         timestampPosition = newTimestampPosition
+        timestampSize = newTimestampSize
         AppPreferences.setShowTimestamp(this, showTimestamp)
         AppPreferences.setShowDate(this, showDate)
         AppPreferences.setTimestampPosition(this, timestampPosition)
+        AppPreferences.setTimestampSize(this, timestampSize)
+
+        // Update flashlight & night mode settings
+        val newFlashlightEnabled = intent?.getBooleanExtra("flashlight_enabled", AppPreferences.getFlashlightEnabled(this)) ?: false
+        val newNightModeEnabled = intent?.getBooleanExtra("night_mode_enabled", AppPreferences.getNightModeEnabled(this)) ?: false
+        flashlightEnabled = newFlashlightEnabled
+        nightModeEnabled = newNightModeEnabled
+        AppPreferences.setFlashlightEnabled(this, flashlightEnabled)
+        AppPreferences.setNightModeEnabled(this, nightModeEnabled)
 
         if (showPreview != newShowPreview) {
              showPreview = newShowPreview
@@ -295,6 +347,12 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         if (isSurfaceCreated) {
             startStream()
         }
+
+        // Apply flashlight and night mode after stream starts
+        Handler(Looper.getMainLooper()).postDelayed({
+            applyFlashlight()
+            updateNightModeSensor()
+        }, 1000)
 
         return START_STICKY
     }
@@ -374,7 +432,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 rtspServerCamera.getGlInterface().setFilter(filter)
             }
 
-            filter.setText(buildTimestampString(), 22f, Color.WHITE)
+            val fontSize = getOverlayFontSize()
+            filter.setText(buildTimestampString(), fontSize, Color.WHITE)
 
             // Set position based on user preference (percentage-based)
             when (timestampPosition) {
@@ -383,12 +442,24 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 "Bottom Left" -> filter.setPosition(2f, 90f)
                 "Bottom Right" -> filter.setPosition(65f, 90f)
             }
-            filter.setScale(35f, 10f)
+
+            // Scale based on size
+            val scaleW = when (timestampSize) {
+                "Small" -> 25f
+                "Large" -> 45f
+                else -> 35f
+            }
+            val scaleH = when (timestampSize) {
+                "Small" -> 6f
+                "Large" -> 14f
+                else -> 10f
+            }
+            filter.setScale(scaleW, scaleH)
 
             textFilter = filter
             timestampHandler.removeCallbacks(timestampRunnable)
             timestampHandler.post(timestampRunnable)
-            android.util.Log.d("CctvServerService", "Timestamp overlay applied at $timestampPosition")
+            android.util.Log.d("CctvServerService", "Timestamp overlay applied at $timestampPosition, size=$timestampSize")
         } catch (e: Exception) {
             android.util.Log.e("CctvServerService", "Failed to apply timestamp overlay", e)
         }
@@ -398,9 +469,17 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         val filter = textFilter ?: return
         if (!showTimestamp && !showDate) return
         try {
-            filter.setText(buildTimestampString(), 22f, Color.WHITE)
+            filter.setText(buildTimestampString(), getOverlayFontSize(), Color.WHITE)
         } catch (e: Exception) {
             // Ignore - filter may not be ready
+        }
+    }
+
+    private fun getOverlayFontSize(): Float {
+        return when (timestampSize) {
+            "Small" -> 16f
+            "Large" -> 30f
+            else -> 22f  // Medium
         }
     }
 
@@ -414,6 +493,52 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             parts.add(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(now))
         }
         return parts.joinToString(" ")
+    }
+
+    private fun applyFlashlight() {
+        if (!::rtspServerCamera.isInitialized || !rtspServerCamera.isStreaming) return
+        try {
+            if (flashlightEnabled && !isLanternOn) {
+                rtspServerCamera.enableLantern()
+                isLanternOn = true
+                android.util.Log.d("CctvServerService", "Flashlight ON")
+            } else if (!flashlightEnabled && isLanternOn) {
+                rtspServerCamera.disableLantern()
+                isLanternOn = false
+                android.util.Log.d("CctvServerService", "Flashlight OFF")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CctvServerService", "Failed to toggle flashlight", e)
+        }
+    }
+
+    private val lightSensorListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent?) {
+            if (!nightModeEnabled) return
+            val lux = event?.values?.get(0) ?: return
+            val shouldEnableFlash = lux < 10f
+            if (shouldEnableFlash != isLanternOn) {
+                flashlightEnabled = shouldEnableFlash
+                applyFlashlight()
+                android.util.Log.d("CctvServerService", "Night mode: lux=$lux, flash=${if (shouldEnableFlash) "ON" else "OFF"}")
+            }
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
+
+    private fun updateNightModeSensor() {
+        sensorManager?.unregisterListener(lightSensorListener)
+        if (nightModeEnabled && lightSensor != null) {
+            sensorManager?.registerListener(
+                lightSensorListener,
+                lightSensor,
+                SensorManager.SENSOR_DELAY_NORMAL
+            )
+            android.util.Log.d("CctvServerService", "Night mode sensor registered")
+        } else {
+            android.util.Log.d("CctvServerService", "Night mode sensor unregistered")
+        }
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -438,6 +563,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         super.onDestroy()
         snapshotHandler.removeCallbacks(snapshotRunnable)
         timestampHandler.removeCallbacks(timestampRunnable)
+        sensorManager?.unregisterListener(lightSensorListener)
         
         webServer.stop()
         

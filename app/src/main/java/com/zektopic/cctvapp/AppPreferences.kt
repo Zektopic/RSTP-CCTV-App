@@ -119,4 +119,31 @@ object AppPreferences {
     fun setTimestampPosition(context: Context, position: String) {
         prefs(context).edit().putString(KEY_TIMESTAMP_POSITION, position).apply()
     }
+
+    private const val KEY_TIMESTAMP_SIZE = "timestamp_size"
+
+    fun getTimestampSize(context: Context): String =
+        prefs(context).getString(KEY_TIMESTAMP_SIZE, "Medium") ?: "Medium"
+
+    fun setTimestampSize(context: Context, size: String) {
+        prefs(context).edit().putString(KEY_TIMESTAMP_SIZE, size).apply()
+    }
+
+    // --- Flashlight & Night Mode ---
+    private const val KEY_FLASHLIGHT_ENABLED = "flashlight_enabled"
+    private const val KEY_NIGHT_MODE_ENABLED = "night_mode_enabled"
+
+    fun getFlashlightEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_FLASHLIGHT_ENABLED, false)
+
+    fun setFlashlightEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_FLASHLIGHT_ENABLED, enabled).apply()
+    }
+
+    fun getNightModeEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_NIGHT_MODE_ENABLED, false)
+
+    fun setNightModeEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_NIGHT_MODE_ENABLED, enabled).apply()
+    }
 }

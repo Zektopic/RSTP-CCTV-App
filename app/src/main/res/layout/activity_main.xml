@@ -312,6 +312,67 @@
                         tools:ignore="LabelFor" />
                 </com.google.android.material.textfield.TextInputLayout>
 
+                <!-- Overlay Text Size Dropdown -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/menu_overlay_size"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="@string/overlay_size">
+
+                    <AutoCompleteTextView
+                        android:id="@+id/spinner_overlay_size"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="none"
+                        tools:ignore="LabelFor" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ═══════════════════════════════════════ -->
+        <!-- Camera Controls Card                   -->
+        <!-- ═══════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:contentPadding="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/section_camera_controls"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                    android:textColor="?attr/colorPrimary" />
+
+                <!-- Flashlight Toggle -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switch_flashlight"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/flashlight_toggle"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+                <!-- Night Mode Toggle -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switch_night_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/night_mode_toggle"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

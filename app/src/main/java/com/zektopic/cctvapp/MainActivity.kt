@@ -30,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     private val resolutions = arrayOf("640x480", "1280x720", "1920x1080")
     private val codecs = arrayOf("H264", "H265", "VP9", "AV1")
     private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
+    private val overlaySizes = arrayOf("Small", "Medium", "Large")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,6 +61,10 @@ class MainActivity : AppCompatActivity() {
 
         (binding.spinnerOverlayPosition as? AutoCompleteTextView)?.setAdapter(
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, overlayPositions)
+        )
+
+        (binding.spinnerOverlaySize as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, overlaySizes)
         )
     }
 
@@ -96,6 +101,14 @@ class MainActivity : AppCompatActivity() {
         (binding.spinnerOverlayPosition as? AutoCompleteTextView)?.setText(
             if (savedPosition in overlayPositions) savedPosition else overlayPositions.first(), false
         )
+        val savedSize = AppPreferences.getTimestampSize(this)
+        (binding.spinnerOverlaySize as? AutoCompleteTextView)?.setText(
+            if (savedSize in overlaySizes) savedSize else overlaySizes[1], false
+        )
+
+        // Load saved flashlight & night mode settings
+        binding.switchFlashlight.isChecked = AppPreferences.getFlashlightEnabled(this)
+        binding.switchNightMode.isChecked = AppPreferences.getNightModeEnabled(this)
     }
 
     private fun setAuthFieldsEnabled(enabled: Boolean) {
@@ -199,6 +212,11 @@ class MainActivity : AppCompatActivity() {
             restartServer()
         }
 
+        (binding.spinnerOverlaySize as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            AppPreferences.setTimestampSize(this, overlaySizes[position])
+            restartServer()
+        }
+
         // Copy buttons
         binding.btnCopyRtsp.setOnClickListener {
             copyToClipboard("RTSP URL", binding.textRtspUrl.text.toString())
@@ -206,6 +224,29 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnCopyWeb.setOnClickListener {
             copyToClipboard("Web URL", binding.textWebUrl.text.toString())
+        }
+
+        // Flashlight & Night Mode listeners
+        binding.switchFlashlight.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setFlashlightEnabled(this, isChecked)
+            if (binding.switchServer.isChecked) {
+                val intent = Intent(this, CctvServerService::class.java).apply {
+                    action = "ACTION_TOGGLE_FLASHLIGHT"
+                    putExtra("flashlight_enabled", isChecked)
+                }
+                startService(intent)
+            }
+        }
+
+        binding.switchNightMode.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setNightModeEnabled(this, isChecked)
+            if (binding.switchServer.isChecked) {
+                val intent = Intent(this, CctvServerService::class.java).apply {
+                    action = "ACTION_TOGGLE_NIGHT_MODE"
+                    putExtra("night_mode_enabled", isChecked)
+                }
+                startService(intent)
+            }
         }
     }
 
@@ -250,6 +291,9 @@ class MainActivity : AppCompatActivity() {
             putExtra("show_timestamp", binding.switchTimestamp.isChecked)
             putExtra("show_date", binding.switchDate.isChecked)
             putExtra("timestamp_position", binding.spinnerOverlayPosition.text.toString())
+            putExtra("timestamp_size", binding.spinnerOverlaySize.text.toString())
+            putExtra("flashlight_enabled", binding.switchFlashlight.isChecked)
+            putExtra("night_mode_enabled", binding.switchNightMode.isChecked)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
