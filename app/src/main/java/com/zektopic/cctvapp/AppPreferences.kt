@@ -67,4 +67,30 @@ object AppPreferences {
     fun setUseBackCamera(context: Context, useBack: Boolean) {
         prefs(context).edit().putBoolean(KEY_USE_BACK_CAMERA, useBack).apply()
     }
+
+    // --- RTSP Authentication ---
+    private const val KEY_AUTH_ENABLED = "rtsp_auth_enabled"
+    private const val KEY_AUTH_USERNAME = "rtsp_username"
+    private const val KEY_AUTH_PASSWORD = "rtsp_password"
+
+    fun getAuthEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTH_ENABLED, false)
+
+    fun setAuthEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTH_ENABLED, enabled).apply()
+    }
+
+    fun getUsername(context: Context): String =
+        prefs(context).getString(KEY_AUTH_USERNAME, "") ?: ""
+
+    fun setUsername(context: Context, username: String) {
+        prefs(context).edit().putString(KEY_AUTH_USERNAME, username).apply()
+    }
+
+    fun getPassword(context: Context): String =
+        prefs(context).getString(KEY_AUTH_PASSWORD, "") ?: ""
+
+    fun setPassword(context: Context, password: String) {
+        prefs(context).edit().putString(KEY_AUTH_PASSWORD, password).apply()
+    }
 }

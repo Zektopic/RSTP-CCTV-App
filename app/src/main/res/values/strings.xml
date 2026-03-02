@@ -23,4 +23,12 @@
     <string name="copy_url">Copy URL</string>
     <string name="url_copied">URL copied to clipboard</string>
     <string name="settings_saved">Settings saved</string>
+
+    <!-- Authentication strings -->
+    <string name="section_auth">Authentication</string>
+    <string name="enable_auth">Enable Authentication</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="generate_password">Generate</string>
+    <string name="password_generated">Password generated</string>
 </resources>

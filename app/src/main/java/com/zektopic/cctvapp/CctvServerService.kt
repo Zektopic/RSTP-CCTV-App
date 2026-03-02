@@ -43,6 +43,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private var videoCodec = "H264"
     private var forceSoftware = false
     private var showPreview = false
+    private var authEnabled = false
+    private var authUsername = ""
+    private var authPassword = ""
     private val currentSnapshot = AtomicReference<ByteArray>(null)
     private val snapshotHandler = Handler(Looper.getMainLooper())
     private val snapshotRunnable = object : Runnable {
@@ -68,6 +71,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         videoHeight = AppPreferences.getVideoHeight(this)
         forceSoftware = AppPreferences.getForceSoftware(this)
         showPreview = AppPreferences.getShowPreview(this)
+        authEnabled = AppPreferences.getAuthEnabled(this)
+        authUsername = AppPreferences.getUsername(this)
+        authPassword = AppPreferences.getPassword(this)
         
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         openGlView = OpenGlView(applicationContext)
@@ -142,7 +148,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     }
                 }
             },
-            getCurrentResolution = { "${videoWidth}x${videoHeight}" }
+            getCurrentResolution = { "${videoWidth}x${videoHeight}" },
+            getAuthEnabled = { authEnabled },
+            getUsername = { authUsername },
+            getPassword = { authPassword }
         )
         webServer.start()
         snapshotHandler.post(snapshotRunnable)
@@ -197,6 +206,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         val newWidth = intent?.getIntExtra("width", AppPreferences.getVideoWidth(this)) ?: 640
         val newHeight = intent?.getIntExtra("height", AppPreferences.getVideoHeight(this)) ?: 480
         val newForceSoftware = intent?.getBooleanExtra("force_software", AppPreferences.getForceSoftware(this)) ?: false
+        val newAuthEnabled = intent?.getBooleanExtra("auth_enabled", AppPreferences.getAuthEnabled(this)) ?: false
+        val newAuthUsername = intent?.getStringExtra("auth_username") ?: AppPreferences.getUsername(this)
+        val newAuthPassword = intent?.getStringExtra("auth_password") ?: AppPreferences.getPassword(this)
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CCTV Server")
@@ -236,6 +248,14 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         AppPreferences.setVideoCodec(this, videoCodec)
         AppPreferences.setResolution(this, videoWidth, videoHeight)
         AppPreferences.setForceSoftware(this, forceSoftware)
+
+        // Update auth settings
+        authEnabled = newAuthEnabled
+        authUsername = newAuthUsername
+        authPassword = newAuthPassword
+        AppPreferences.setAuthEnabled(this, authEnabled)
+        AppPreferences.setUsername(this, authUsername)
+        AppPreferences.setPassword(this, authPassword)
 
         if (showPreview != newShowPreview) {
              showPreview = newShowPreview
@@ -281,6 +301,15 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 
                 rtspServerCamera.setVideoCodec(selectedCodec)
                 android.util.Log.d("CctvServerService", "Selected codec: $selectedCodec ($videoCodec)")
+
+                // Set authentication
+                if (authEnabled && authUsername.isNotEmpty() && authPassword.isNotEmpty()) {
+                    rtspServerCamera.getStreamClient().setAuthorization(authUsername, authPassword)
+                    android.util.Log.d("CctvServerService", "RTSP auth enabled for user: $authUsername")
+                } else {
+                    rtspServerCamera.getStreamClient().setAuthorization("", "")
+                    android.util.Log.d("CctvServerService", "RTSP auth disabled")
+                }
 
                 if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
                     rtspServerCamera.startStream()

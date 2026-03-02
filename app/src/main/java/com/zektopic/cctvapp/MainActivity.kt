@@ -76,6 +76,21 @@ class MainActivity : AppCompatActivity() {
         // Load saved toggles
         binding.switchForceSoftware.isChecked = AppPreferences.getForceSoftware(this)
         binding.switchPreview.isChecked = AppPreferences.getShowPreview(this)
+
+        // Load saved auth settings
+        val authEnabled = AppPreferences.getAuthEnabled(this)
+        binding.switchAuth.isChecked = authEnabled
+        binding.editUsername.setText(AppPreferences.getUsername(this))
+        binding.editPassword.setText(AppPreferences.getPassword(this))
+        setAuthFieldsEnabled(authEnabled)
+    }
+
+    private fun setAuthFieldsEnabled(enabled: Boolean) {
+        binding.layoutUsername.isEnabled = enabled
+        binding.editUsername.isEnabled = enabled
+        binding.layoutPassword.isEnabled = enabled
+        binding.editPassword.isEnabled = enabled
+        binding.btnGeneratePassword.isEnabled = enabled
     }
 
     private fun setupListeners() {
@@ -120,6 +135,39 @@ class MainActivity : AppCompatActivity() {
         (binding.spinnerCodec as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
             AppPreferences.setVideoCodec(this, codecs[position])
             restartServer()
+        }
+
+        // Auth listeners
+        binding.switchAuth.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setAuthEnabled(this, isChecked)
+            setAuthFieldsEnabled(isChecked)
+            updateNetworkInfo()
+            restartServer()
+        }
+
+        binding.editUsername.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                AppPreferences.setUsername(this, binding.editUsername.text.toString())
+                updateNetworkInfo()
+                restartServer()
+            }
+        }
+
+        binding.editPassword.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                AppPreferences.setPassword(this, binding.editPassword.text.toString())
+                updateNetworkInfo()
+                restartServer()
+            }
+        }
+
+        binding.btnGeneratePassword.setOnClickListener {
+            val password = generateRandomPassword(10)
+            binding.editPassword.setText(password)
+            AppPreferences.setPassword(this, password)
+            updateNetworkInfo()
+            restartServer()
+            Toast.makeText(this, R.string.password_generated, Toast.LENGTH_SHORT).show()
         }
 
         // Copy buttons
@@ -167,6 +215,9 @@ class MainActivity : AppCompatActivity() {
             putExtra("show_preview", binding.switchPreview.isChecked)
             putExtra("width", width)
             putExtra("height", height)
+            putExtra("auth_enabled", binding.switchAuth.isChecked)
+            putExtra("auth_username", binding.editUsername.text.toString())
+            putExtra("auth_password", binding.editPassword.text.toString())
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -200,12 +251,24 @@ class MainActivity : AppCompatActivity() {
 
         // Set RTSP and Web URLs
         if (ipv4Address != null) {
-            binding.textRtspUrl.text = "rtsp://$ip:8554/stream"
+            val authEnabled = AppPreferences.getAuthEnabled(this)
+            val username = AppPreferences.getUsername(this)
+            val password = AppPreferences.getPassword(this)
+            if (authEnabled && username.isNotEmpty() && password.isNotEmpty()) {
+                binding.textRtspUrl.text = "rtsp://$username:$password@$ip:8554/stream"
+            } else {
+                binding.textRtspUrl.text = "rtsp://$ip:8554/stream"
+            }
             binding.textWebUrl.text = "http://$ip:8080"
         } else {
             binding.textRtspUrl.text = getString(R.string.ip_not_available)
             binding.textWebUrl.text = getString(R.string.ip_not_available)
         }
+    }
+
+    private fun generateRandomPassword(length: Int): String {
+        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        return (1..length).map { chars.random() }.joinToString("")
     }
 
     private fun requestPermissionsIfNeeded() {

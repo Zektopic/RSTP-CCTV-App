@@ -17,6 +17,9 @@ class BootReceiver : BroadcastReceiver() {
                 putExtra("height", AppPreferences.getVideoHeight(context))
                 putExtra("force_software", AppPreferences.getForceSoftware(context))
                 putExtra("show_preview", AppPreferences.getShowPreview(context))
+                putExtra("auth_enabled", AppPreferences.getAuthEnabled(context))
+                putExtra("auth_username", AppPreferences.getUsername(context))
+                putExtra("auth_password", AppPreferences.getPassword(context))
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
