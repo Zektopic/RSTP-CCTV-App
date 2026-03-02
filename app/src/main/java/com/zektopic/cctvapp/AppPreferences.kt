@@ -93,4 +93,30 @@ object AppPreferences {
     fun setPassword(context: Context, password: String) {
         prefs(context).edit().putString(KEY_AUTH_PASSWORD, password).apply()
     }
+
+    // --- Timestamp Overlay ---
+    private const val KEY_SHOW_TIMESTAMP = "show_timestamp"
+    private const val KEY_SHOW_DATE = "show_date"
+    private const val KEY_TIMESTAMP_POSITION = "timestamp_position"
+
+    fun getShowTimestamp(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SHOW_TIMESTAMP, false)
+
+    fun setShowTimestamp(context: Context, show: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SHOW_TIMESTAMP, show).apply()
+    }
+
+    fun getShowDate(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SHOW_DATE, false)
+
+    fun setShowDate(context: Context, show: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SHOW_DATE, show).apply()
+    }
+
+    fun getTimestampPosition(context: Context): String =
+        prefs(context).getString(KEY_TIMESTAMP_POSITION, "Top Left") ?: "Top Left"
+
+    fun setTimestampPosition(context: Context, position: String) {
+        prefs(context).edit().putString(KEY_TIMESTAMP_POSITION, position).apply()
+    }
 }

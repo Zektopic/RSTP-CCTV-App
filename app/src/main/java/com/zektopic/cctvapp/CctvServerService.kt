@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.PixelFormat
 import android.net.ConnectivityManager
 import android.os.Build
@@ -19,10 +20,13 @@ import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.pedro.common.ConnectChecker
 import com.pedro.common.VideoCodec
+import com.pedro.encoder.input.gl.render.filters.`object`.TextObjectFilterRender
 import com.pedro.library.view.OpenGlView
 import com.pedro.rtspserver.RtspServerCamera2
 import java.io.ByteArrayOutputStream
 import java.net.Inet4Address
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
 
@@ -46,6 +50,17 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private var authEnabled = false
     private var authUsername = ""
     private var authPassword = ""
+    private var showTimestamp = false
+    private var showDate = false
+    private var timestampPosition = "Top Left"
+    private var textFilter: TextObjectFilterRender? = null
+    private val timestampHandler = Handler(Looper.getMainLooper())
+    private val timestampRunnable = object : Runnable {
+        override fun run() {
+            updateTimestampText()
+            timestampHandler.postDelayed(this, 1000)
+        }
+    }
     private val currentSnapshot = AtomicReference<ByteArray>(null)
     private val snapshotHandler = Handler(Looper.getMainLooper())
     private val snapshotRunnable = object : Runnable {
@@ -74,6 +89,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         authEnabled = AppPreferences.getAuthEnabled(this)
         authUsername = AppPreferences.getUsername(this)
         authPassword = AppPreferences.getPassword(this)
+        showTimestamp = AppPreferences.getShowTimestamp(this)
+        showDate = AppPreferences.getShowDate(this)
+        timestampPosition = AppPreferences.getTimestampPosition(this)
         
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         openGlView = OpenGlView(applicationContext)
@@ -209,6 +227,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         val newAuthEnabled = intent?.getBooleanExtra("auth_enabled", AppPreferences.getAuthEnabled(this)) ?: false
         val newAuthUsername = intent?.getStringExtra("auth_username") ?: AppPreferences.getUsername(this)
         val newAuthPassword = intent?.getStringExtra("auth_password") ?: AppPreferences.getPassword(this)
+        val newShowTimestamp = intent?.getBooleanExtra("show_timestamp", AppPreferences.getShowTimestamp(this)) ?: false
+        val newShowDate = intent?.getBooleanExtra("show_date", AppPreferences.getShowDate(this)) ?: false
+        val newTimestampPosition = intent?.getStringExtra("timestamp_position") ?: AppPreferences.getTimestampPosition(this)
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CCTV Server")
@@ -256,6 +277,14 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         AppPreferences.setAuthEnabled(this, authEnabled)
         AppPreferences.setUsername(this, authUsername)
         AppPreferences.setPassword(this, authPassword)
+
+        // Update overlay settings
+        showTimestamp = newShowTimestamp
+        showDate = newShowDate
+        timestampPosition = newTimestampPosition
+        AppPreferences.setShowTimestamp(this, showTimestamp)
+        AppPreferences.setShowDate(this, showDate)
+        AppPreferences.setTimestampPosition(this, timestampPosition)
 
         if (showPreview != newShowPreview) {
              showPreview = newShowPreview
@@ -313,11 +342,13 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
                 if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
                     rtspServerCamera.startStream()
+                    applyTimestampOverlay()
                 } else {
                     android.util.Log.w("CctvServerService", "Codec $selectedCodec preparation failed, falling back to H264")
                     rtspServerCamera.setVideoCodec(VideoCodec.H264)
                     if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
                          rtspServerCamera.startStream()
+                         applyTimestampOverlay()
                          videoCodec = "H264"
                          AppPreferences.setVideoCodec(this, videoCodec)
                     } else {
@@ -328,6 +359,61 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private fun applyTimestampOverlay() {
+        if (!showTimestamp && !showDate) {
+            timestampHandler.removeCallbacks(timestampRunnable)
+            textFilter = null
+            return
+        }
+
+        try {
+            val filter = TextObjectFilterRender()
+            if (::rtspServerCamera.isInitialized) {
+                rtspServerCamera.getGlInterface().setFilter(filter)
+            }
+
+            filter.setText(buildTimestampString(), 22f, Color.WHITE)
+
+            // Set position based on user preference (percentage-based)
+            when (timestampPosition) {
+                "Top Left" -> filter.setPosition(2f, 2f)
+                "Top Right" -> filter.setPosition(65f, 2f)
+                "Bottom Left" -> filter.setPosition(2f, 90f)
+                "Bottom Right" -> filter.setPosition(65f, 90f)
+            }
+            filter.setScale(35f, 10f)
+
+            textFilter = filter
+            timestampHandler.removeCallbacks(timestampRunnable)
+            timestampHandler.post(timestampRunnable)
+            android.util.Log.d("CctvServerService", "Timestamp overlay applied at $timestampPosition")
+        } catch (e: Exception) {
+            android.util.Log.e("CctvServerService", "Failed to apply timestamp overlay", e)
+        }
+    }
+
+    private fun updateTimestampText() {
+        val filter = textFilter ?: return
+        if (!showTimestamp && !showDate) return
+        try {
+            filter.setText(buildTimestampString(), 22f, Color.WHITE)
+        } catch (e: Exception) {
+            // Ignore - filter may not be ready
+        }
+    }
+
+    private fun buildTimestampString(): String {
+        val now = Date()
+        val parts = mutableListOf<String>()
+        if (showDate) {
+            parts.add(SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(now))
+        }
+        if (showTimestamp) {
+            parts.add(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(now))
+        }
+        return parts.joinToString(" ")
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -351,6 +437,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     override fun onDestroy() {
         super.onDestroy()
         snapshotHandler.removeCallbacks(snapshotRunnable)
+        timestampHandler.removeCallbacks(timestampRunnable)
         
         webServer.stop()
         

@@ -31,4 +31,10 @@
     <string name="password">Password</string>
     <string name="generate_password">Generate</string>
     <string name="password_generated">Password generated</string>
+
+    <!-- Overlay strings -->
+    <string name="section_overlay">Overlay</string>
+    <string name="show_timestamp">Show Timestamp</string>
+    <string name="show_date">Show Date</string>
+    <string name="overlay_position">Overlay Position</string>
 </resources>

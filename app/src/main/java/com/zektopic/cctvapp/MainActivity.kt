@@ -29,6 +29,7 @@ class MainActivity : AppCompatActivity() {
 
     private val resolutions = arrayOf("640x480", "1280x720", "1920x1080")
     private val codecs = arrayOf("H264", "H265", "VP9", "AV1")
+    private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,6 +56,10 @@ class MainActivity : AppCompatActivity() {
 
         (binding.spinnerCodec as? AutoCompleteTextView)?.setAdapter(
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, codecs)
+        )
+
+        (binding.spinnerOverlayPosition as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, overlayPositions)
         )
     }
 
@@ -83,6 +88,14 @@ class MainActivity : AppCompatActivity() {
         binding.editUsername.setText(AppPreferences.getUsername(this))
         binding.editPassword.setText(AppPreferences.getPassword(this))
         setAuthFieldsEnabled(authEnabled)
+
+        // Load saved overlay settings
+        binding.switchTimestamp.isChecked = AppPreferences.getShowTimestamp(this)
+        binding.switchDate.isChecked = AppPreferences.getShowDate(this)
+        val savedPosition = AppPreferences.getTimestampPosition(this)
+        (binding.spinnerOverlayPosition as? AutoCompleteTextView)?.setText(
+            if (savedPosition in overlayPositions) savedPosition else overlayPositions.first(), false
+        )
     }
 
     private fun setAuthFieldsEnabled(enabled: Boolean) {
@@ -170,6 +183,22 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.password_generated, Toast.LENGTH_SHORT).show()
         }
 
+        // Overlay listeners
+        binding.switchTimestamp.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setShowTimestamp(this, isChecked)
+            restartServer()
+        }
+
+        binding.switchDate.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setShowDate(this, isChecked)
+            restartServer()
+        }
+
+        (binding.spinnerOverlayPosition as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            AppPreferences.setTimestampPosition(this, overlayPositions[position])
+            restartServer()
+        }
+
         // Copy buttons
         binding.btnCopyRtsp.setOnClickListener {
             copyToClipboard("RTSP URL", binding.textRtspUrl.text.toString())
@@ -218,6 +247,9 @@ class MainActivity : AppCompatActivity() {
             putExtra("auth_enabled", binding.switchAuth.isChecked)
             putExtra("auth_username", binding.editUsername.text.toString())
             putExtra("auth_password", binding.editPassword.text.toString())
+            putExtra("show_timestamp", binding.switchTimestamp.isChecked)
+            putExtra("show_date", binding.switchDate.isChecked)
+            putExtra("timestamp_position", binding.spinnerOverlayPosition.text.toString())
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
