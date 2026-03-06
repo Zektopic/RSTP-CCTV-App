@@ -27,8 +27,10 @@ class MainActivity : AppCompatActivity() {
     private val permissions = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
     private val permissionRequestCode = 100
 
-    private val resolutions = arrayOf("640x480", "1280x720", "1920x1080", "Max")
+    private var resolutions = arrayOf<String>()
     private val codecs = arrayOf("H264", "H265", "VP9", "AV1")
+    private val bitrates = arrayOf("Auto", "1 Mbps", "2 Mbps", "4 Mbps", "6 Mbps", "8 Mbps", "12 Mbps", "16 Mbps")
+    private val fpsOptions = arrayOf("15", "24", "30", "60", "Max")
     private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
     private val overlaySizes = arrayOf("Small", "Medium", "Large")
 
@@ -51,12 +53,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSpinners() {
+        resolutions = getAvailableResolutions()
+        
         (binding.spinnerResolution as? AutoCompleteTextView)?.setAdapter(
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, resolutions)
         )
 
         (binding.spinnerCodec as? AutoCompleteTextView)?.setAdapter(
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, codecs)
+        )
+
+        (binding.spinnerBitrate as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, bitrates)
+        )
+
+        (binding.spinnerFps as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, fpsOptions)
         )
 
         (binding.spinnerOverlayPosition as? AutoCompleteTextView)?.setAdapter(
@@ -78,9 +90,21 @@ class MainActivity : AppCompatActivity() {
         // Load saved resolution
         val savedWidth = AppPreferences.getVideoWidth(this)
         val savedHeight = AppPreferences.getVideoHeight(this)
-        val savedResolution = if (savedWidth == 0 && savedHeight == 0) "Max" else "${savedWidth}x${savedHeight}"
+        val savedResolution = "${savedWidth}x${savedHeight}"
         (binding.spinnerResolution as? AutoCompleteTextView)?.setText(
-            if (savedResolution in resolutions) savedResolution else resolutions.first(), false
+            if (savedResolution in resolutions) savedResolution else resolutions[2], false // default 1080p
+        )
+
+        // Load saved bitrate
+        val savedBitrate = AppPreferences.getVideoBitrate(this)
+        (binding.spinnerBitrate as? AutoCompleteTextView)?.setText(
+            if (savedBitrate in bitrates) savedBitrate else bitrates.first(), false
+        )
+
+        // Load saved fps
+        val savedFps = AppPreferences.getVideoFps(this)
+        (binding.spinnerFps as? AutoCompleteTextView)?.setText(
+            if (savedFps in fpsOptions) savedFps else "30", false
         )
 
         // Load saved toggles
@@ -153,17 +177,23 @@ class MainActivity : AppCompatActivity() {
 
         (binding.spinnerResolution as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
             val selected = resolutions[position]
-            if (selected == "Max") {
-                AppPreferences.setResolution(this, 0, 0)
-            } else {
-                val parts = selected.split("x")
-                AppPreferences.setResolution(this, parts[0].toInt(), parts[1].toInt())
-            }
+            val parts = selected.split("x")
+            AppPreferences.setResolution(this, parts[0].toInt(), parts[1].toInt())
             restartServer()
         }
 
         (binding.spinnerCodec as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
             AppPreferences.setVideoCodec(this, codecs[position])
+            restartServer()
+        }
+
+        (binding.spinnerBitrate as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            AppPreferences.setVideoBitrate(this, bitrates[position])
+            restartServer()
+        }
+
+        (binding.spinnerFps as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            AppPreferences.setVideoFps(this, fpsOptions[position])
             restartServer()
         }
 
@@ -285,6 +315,8 @@ class MainActivity : AppCompatActivity() {
         val (width, height) = getSelectedResolution()
         val intent = Intent(this, CctvServerService::class.java).apply {
             putExtra("video_codec", binding.spinnerCodec.text.toString())
+            putExtra("video_bitrate", binding.spinnerBitrate.text.toString())
+            putExtra("video_fps", binding.spinnerFps.text.toString())
             putExtra("force_software", binding.switchForceSoftware.isChecked)
             putExtra("show_preview", binding.switchPreview.isChecked)
             putExtra("width", width)
@@ -316,11 +348,39 @@ class MainActivity : AppCompatActivity() {
 
     private fun getSelectedResolution(): Pair<Int, Int> {
         val selected = binding.spinnerResolution.text.toString()
-        if (selected == "Max") {
-            return Pair(0, 0)  // Sentinel: CctvServerService will detect max
-        }
         val parts = selected.split("x")
-        return Pair(parts[0].toInt(), parts[1].toInt())
+        if (parts.size == 2) {
+            return Pair(parts[0].toInt(), parts[1].toInt())
+        }
+        return Pair(1920, 1080)
+    }
+
+    private fun getAvailableResolutions(): Array<String> {
+        val baseResolutions = mutableListOf("640x480", "1280x720", "1920x1080")
+        try {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+            val cameraId = cameraManager.cameraIdList.firstOrNull() ?: return baseResolutions.toTypedArray()
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val map = characteristics.get(android.hardware.camera2.CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            val sizes = map?.getOutputSizes(android.graphics.SurfaceTexture::class.java)
+            if (sizes != null) {
+                val extraSizes = sizes.filter { it.width > 1920 || it.height > 1080 }
+                    .filter { it.width * it.height <= 3840 * 2160 } // cap at 4K
+                    .map { "${it.width}x${it.height}" }
+                    .distinct()
+                    
+                val sortedExtraSizes = extraSizes.sortedBy { it.split("x")[0].toInt() * it.split("x")[1].toInt() }
+                
+                for (size in sortedExtraSizes) {
+                    if (!baseResolutions.contains(size)) {
+                        baseResolutions.add(size)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return baseResolutions.toTypedArray()
     }
 
     private fun updateNetworkInfo() {

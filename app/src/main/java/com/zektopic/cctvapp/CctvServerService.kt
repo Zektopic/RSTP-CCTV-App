@@ -55,6 +55,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private var videoWidth = 640
     private var videoHeight = 480
     private var videoCodec = "H264"
+    private var videoBitrate = "Auto"
+    private var videoFps = "30"
     private var forceSoftware = false
     private var showPreview = false
     private var authEnabled = false
@@ -98,6 +100,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
         // Load saved settings as defaults
         videoCodec = AppPreferences.getVideoCodec(this)
+        videoBitrate = AppPreferences.getVideoBitrate(this)
+        videoFps = AppPreferences.getVideoFps(this)
         videoWidth = AppPreferences.getVideoWidth(this)
         videoHeight = AppPreferences.getVideoHeight(this)
         forceSoftware = AppPreferences.getForceSoftware(this)
@@ -353,6 +357,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         val newVideoCodec = intent?.getStringExtra("video_codec") ?: AppPreferences.getVideoCodec(this)
+        val newVideoBitrate = intent?.getStringExtra("video_bitrate") ?: AppPreferences.getVideoBitrate(this)
+        val newVideoFps = intent?.getStringExtra("video_fps") ?: AppPreferences.getVideoFps(this)
         val newShowPreview = intent?.getBooleanExtra("show_preview", AppPreferences.getShowPreview(this)) ?: false
         val newWidth = intent?.getIntExtra("width", AppPreferences.getVideoWidth(this)) ?: 640
         val newHeight = intent?.getIntExtra("height", AppPreferences.getVideoHeight(this)) ?: 480
@@ -383,7 +389,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
         // If already streaming, check if we need to restart due to config change
         if (rtspServerCamera.isStreaming) {
-            if (videoCodec != newVideoCodec || videoWidth != newWidth || videoHeight != newHeight || forceSoftware != newForceSoftware) {
+            if (videoCodec != newVideoCodec || videoBitrate != newVideoBitrate || videoFps != newVideoFps || videoWidth != newWidth || videoHeight != newHeight || forceSoftware != newForceSoftware) {
                 rtspServerCamera.stopStream()
             } else {
                 if (showPreview != newShowPreview) {
@@ -405,12 +411,16 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         }
         
         videoCodec = newVideoCodec
+        videoBitrate = newVideoBitrate
+        videoFps = newVideoFps
         videoWidth = newWidth
         videoHeight = newHeight
         forceSoftware = newForceSoftware
         
         // Persist the settings
         AppPreferences.setVideoCodec(this, videoCodec)
+        AppPreferences.setVideoBitrate(this, videoBitrate)
+        AppPreferences.setVideoFps(this, videoFps)
         AppPreferences.setResolution(this, videoWidth, videoHeight)
         AppPreferences.setForceSoftware(this, forceSoftware)
 
@@ -477,10 +487,20 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 }
 
                 // Dynamic Bitrate Calculation
-                val bitrate = when {
-                    videoWidth >= 1920 -> 6000 * 1024
-                    videoWidth >= 1280 -> 4000 * 1024
-                    else -> 2000 * 1024
+                val bitrate = when (videoBitrate) {
+                    "1 Mbps" -> 1000 * 1024
+                    "2 Mbps" -> 2000 * 1024
+                    "4 Mbps" -> 4000 * 1024
+                    "6 Mbps" -> 6000 * 1024
+                    "8 Mbps" -> 8000 * 1024
+                    "12 Mbps" -> 12000 * 1024
+                    "16 Mbps" -> 16000 * 1024
+                    else -> when { // "Auto"
+                        videoWidth >= 2560 -> 6000 * 1024
+                        videoWidth >= 1920 -> 4000 * 1024
+                        videoWidth >= 1280 -> 2500 * 1024
+                        else -> 1500 * 1024
+                    }
                 }
 
                 rtspServerCamera.prepareAudio(64 * 1024, 44100, true, false, false)
@@ -508,13 +528,18 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     android.util.Log.d("CctvServerService", "RTSP auth disabled")
                 }
 
-                if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
+                val fps = when (videoFps) {
+                    "Max" -> 60
+                    else -> videoFps.toIntOrNull() ?: 30
+                }
+
+                if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, fps, bitrate, 0)) {
                     rtspServerCamera.startStream()
                     applyTimestampOverlay()
                 } else {
                     android.util.Log.w("CctvServerService", "Codec $selectedCodec preparation failed, falling back to H264")
                     rtspServerCamera.setVideoCodec(VideoCodec.H264)
-                    if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
+                    if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, fps, bitrate, 0)) {
                          rtspServerCamera.startStream()
                          applyTimestampOverlay()
                          videoCodec = "H264"

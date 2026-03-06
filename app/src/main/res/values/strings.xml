@@ -3,6 +3,8 @@
     <string name="cctv_server_title">CCTV Server</string>
     <string name="enable_server">Enable Server</string>
     <string name="video_codec">Video Codec</string>
+    <string name="video_bitrate">Video Bitrate</string>
+    <string name="video_fps">Video FPS</string>
     <string name="force_software_codec">Force Software Codec</string>
     <string name="resolution">Resolution</string>
     <string name="switch_camera">Switch Camera</string>

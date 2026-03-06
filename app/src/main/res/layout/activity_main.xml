@@ -153,6 +153,40 @@
                         tools:ignore="LabelFor" />
                 </com.google.android.material.textfield.TextInputLayout>
 
+                <!-- Video Bitrate -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/menu_bitrate"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="@string/video_bitrate">
+
+                    <AutoCompleteTextView
+                        android:id="@+id/spinner_bitrate"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="none"
+                        tools:ignore="LabelFor" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Video FPS -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/menu_fps"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="@string/video_fps">
+
+                    <AutoCompleteTextView
+                        android:id="@+id/spinner_fps"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="none"
+                        tools:ignore="LabelFor" />
+                </com.google.android.material.textfield.TextInputLayout>
+
                 <!-- Force Software Codec -->
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/switch_force_software"

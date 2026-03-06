@@ -30,6 +30,26 @@ object AppPreferences {
         prefs(context).edit().putString(KEY_VIDEO_CODEC, codec).apply()
     }
 
+    // --- Video Bitrate ---
+    private const val KEY_VIDEO_BITRATE = "video_bitrate"
+
+    fun getVideoBitrate(context: Context): String =
+        prefs(context).getString(KEY_VIDEO_BITRATE, "Auto") ?: "Auto"
+
+    fun setVideoBitrate(context: Context, bitrate: String) {
+        prefs(context).edit().putString(KEY_VIDEO_BITRATE, bitrate).apply()
+    }
+
+    // --- Video FPS ---
+    private const val KEY_VIDEO_FPS = "video_fps"
+
+    fun getVideoFps(context: Context): String =
+        prefs(context).getString(KEY_VIDEO_FPS, "30") ?: "30"
+
+    fun setVideoFps(context: Context, fps: String) {
+        prefs(context).edit().putString(KEY_VIDEO_FPS, fps).apply()
+    }
+
     // --- Resolution ---
     fun getVideoWidth(context: Context): Int =
         prefs(context).getInt(KEY_VIDEO_WIDTH, 640)
