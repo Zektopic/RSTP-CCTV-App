@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -17,6 +18,8 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.net.ConnectivityManager
+import android.net.wifi.WifiManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -261,10 +264,34 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                         rtspServerCamera.getStreamClient().setAuthorization("", "")
                     }
                 }
-            }
+            },
+            getBatteryLevel = { getBatteryLevel() },
+            getWifiStrength = { getWifiStrength() }
         )
         webServer.start()
         snapshotHandler.post(snapshotRunnable)
+    }
+
+    private fun getBatteryLevel(): Int {
+        val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { ifilter ->
+            registerReceiver(null, ifilter)
+        }
+        val level: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        return if (level != -1 && scale != -1) {
+            (level * 100 / scale.toFloat()).toInt()
+        } else {
+            -1
+        }
+    }
+
+    private fun getWifiStrength(): Int {
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val wifiInfo = wifiManager?.connectionInfo
+        val rssi = wifiInfo?.rssi ?: return -1
+        // Avoid calculation if rssi is an error value (-127 or similar depending on OS)
+        if (rssi < -100) return 0
+        return WifiManager.calculateSignalLevel(rssi, 100)
     }
 
     private fun getIpAddress(): String {

@@ -30,7 +30,9 @@ class WebServer(
     private val getNightModeEnabled: () -> Boolean,
     private val getForceSoftware: () -> Boolean,
     private val getShowPreview: () -> Boolean,
-    private val onAuthUpdate: (Boolean, String, String) -> Unit
+    private val onAuthUpdate: (Boolean, String, String) -> Unit,
+    private val getBatteryLevel: () -> Int,
+    private val getWifiStrength: () -> Int
 ) : NanoHTTPD(8080) {
 
     override fun serve(session: IHTTPSession): Response {
@@ -123,7 +125,9 @@ class WebServer(
                 "flashlightEnabled":${getFlashlightEnabled()},
                 "nightModeEnabled":${getNightModeEnabled()},
                 "forceSoftware":${getForceSoftware()},
-                "showPreview":${getShowPreview()}
+                "showPreview":${getShowPreview()},
+                "batteryLevel":${getBatteryLevel()},
+                "wifiStrength":${getWifiStrength()}
             }""".trimIndent()
             val response = newFixedLengthResponse(Response.Status.OK, "application/json", json)
             response.addHeader("Access-Control-Allow-Origin", "*")
@@ -530,9 +534,19 @@ class WebServer(
         <!-- Header -->
         <div class="header">
             <h1>CCTV Dashboard</h1>
-            <div class="status-badge offline" id="statusBadge">
-                <span class="status-dot"></span>
-                <span id="statusText">OFFLINE</span>
+            <div style="display:flex; gap:12px; align-items:center;">
+                <div style="display:flex; align-items:center; gap:4px; font-size:13px; font-weight:600; color:var(--text-secondary);" title="Battery">
+                    <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:currentColor;"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
+                    <span id="batteryText">—%</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:4px; font-size:13px; font-weight:600; color:var(--text-secondary);" title="WiFi Signal">
+                    <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:currentColor;"><path d="M12.01 21.49L23.64 7c-.45-.34-4.93-4-11.64-4C5.28 3 .81 6.66.36 7l11.63 14.49.01.01.01-.01z"/></svg>
+                    <span id="wifiText">—%</span>
+                </div>
+                <div class="status-badge offline" id="statusBadge">
+                    <span class="status-dot"></span>
+                    <span id="statusText">OFFLINE</span>
+                </div>
             </div>
         </div>
         
@@ -729,6 +743,11 @@ class WebServer(
                     const btnStreamText = document.getElementById('btnStreamText');
                     const chipCodec = document.getElementById('chipCodec');
                     const chipRes = document.getElementById('chipRes');
+                    const batteryText = document.getElementById('batteryText');
+                    const wifiText = document.getElementById('wifiText');
+
+                    if (data.batteryLevel >= 0) batteryText.textContent = data.batteryLevel + '%';
+                    if (data.wifiStrength >= 0) wifiText.textContent = data.wifiStrength + '%';
                     
                     if (data.streaming) {
                         badge.className = 'status-badge live';
