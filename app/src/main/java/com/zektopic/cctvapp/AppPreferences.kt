@@ -166,4 +166,32 @@ object AppPreferences {
     fun setNightModeEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_NIGHT_MODE_ENABLED, enabled).apply()
     }
+
+    // --- Camera Controls (Zoom & Exposure) ---
+    private const val KEY_CAMERA_ZOOM = "camera_zoom"
+    private const val KEY_EXPOSURE_COMPENSATION = "exposure_compensation"
+
+    fun getCameraZoom(context: Context): Float =
+        prefs(context).getFloat(KEY_CAMERA_ZOOM, 1.0f)
+
+    fun setCameraZoom(context: Context, zoom: Float) {
+        prefs(context).edit().putFloat(KEY_CAMERA_ZOOM, zoom).apply()
+    }
+
+    fun getExposureCompensation(context: Context): Int =
+        prefs(context).getInt(KEY_EXPOSURE_COMPENSATION, 0)
+
+    fun setExposureCompensation(context: Context, exposure: Int) {
+        prefs(context).edit().putInt(KEY_EXPOSURE_COMPENSATION, exposure).apply()
+    }
+
+    // --- Recording ---
+    private const val KEY_RECORDING_DIRECTORY = "recording_directory"
+
+    fun getRecordingDirectory(context: Context): String? =
+        prefs(context).getString(KEY_RECORDING_DIRECTORY, null)
+
+    fun setRecordingDirectory(context: Context, uri: String) {
+        prefs(context).edit().putString(KEY_RECORDING_DIRECTORY, uri).apply()
+    }
 }

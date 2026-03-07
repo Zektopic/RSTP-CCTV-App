@@ -13,6 +13,10 @@ import android.graphics.ImageFormat
 import android.graphics.PixelFormat
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
+import java.io.File
+import java.io.FileOutputStream
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -52,6 +56,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var webServer: WebServer
     private lateinit var windowManager: WindowManager
     private var isSurfaceCreated = false
+    private var isRecording = false
+    private var tempRecordFile: File? = null
     private var videoWidth = 640
     private var videoHeight = 480
     private var videoCodec = "H264"
@@ -69,6 +75,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private var flashlightEnabled = false
     private var nightModeEnabled = false
     private var isLanternOn = false
+    private var cameraZoom = 1.0f
+    private var exposureCompensation = 0
     private var sensorManager: SensorManager? = null
     private var lightSensor: Sensor? = null
     private var textFilter: TextObjectFilterRender? = null
@@ -115,6 +123,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         timestampSize = AppPreferences.getTimestampSize(this)
         flashlightEnabled = AppPreferences.getFlashlightEnabled(this)
         nightModeEnabled = AppPreferences.getNightModeEnabled(this)
+        cameraZoom = AppPreferences.getCameraZoom(this)
+        exposureCompensation = AppPreferences.getExposureCompensation(this)
 
         // Setup light sensor for night mode
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -270,7 +280,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 }
             },
             getBatteryLevel = { getBatteryLevel() },
-            getWifiStrength = { getWifiStrength() }
+            getWifiStrength = { getWifiStrength() },
+            onToggleRecording = { toggleRecording() },
+            onTakePhoto = { takePhotoToStorage() },
+            isRecordingStatus = { isRecording }
         )
         webServer.start()
         snapshotHandler.post(snapshotRunnable)
@@ -353,6 +366,30 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             nightModeEnabled = intent.getBooleanExtra("night_mode_enabled", false)
             AppPreferences.setNightModeEnabled(this, nightModeEnabled)
             updateNightModeSensor()
+            return START_STICKY
+        }
+
+        if (intent?.action == "ACTION_SET_ZOOM") {
+            cameraZoom = intent.getFloatExtra("camera_zoom", 1.0f)
+            AppPreferences.setCameraZoom(this, cameraZoom)
+            applyZoom()
+            return START_STICKY
+        }
+
+        if (intent?.action == "ACTION_SET_EXPOSURE") {
+            exposureCompensation = intent.getIntExtra("exposure_compensation", 0)
+            AppPreferences.setExposureCompensation(this, exposureCompensation)
+            applyExposure()
+            return START_STICKY
+        }
+
+        if (intent?.action == "ACTION_TOGGLE_RECORDING") {
+            toggleRecording()
+            return START_STICKY
+        }
+
+        if (intent?.action == "ACTION_TAKE_PHOTO") {
+            takePhotoToStorage()
             return START_STICKY
         }
 
@@ -450,6 +487,14 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         AppPreferences.setFlashlightEnabled(this, flashlightEnabled)
         AppPreferences.setNightModeEnabled(this, nightModeEnabled)
 
+        // Update zoom and exposure settings
+        val newZoom = intent?.getFloatExtra("camera_zoom", AppPreferences.getCameraZoom(this)) ?: 1.0f
+        val newExposure = intent?.getIntExtra("exposure_compensation", AppPreferences.getExposureCompensation(this)) ?: 0
+        cameraZoom = newZoom
+        exposureCompensation = newExposure
+        AppPreferences.setCameraZoom(this, cameraZoom)
+        AppPreferences.setExposureCompensation(this, exposureCompensation)
+
         if (showPreview != newShowPreview) {
              showPreview = newShowPreview
              AppPreferences.setShowPreview(this, showPreview)
@@ -464,6 +509,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         Handler(Looper.getMainLooper()).postDelayed({
             applyFlashlight()
             updateNightModeSensor()
+            applyZoom()
+            applyExposure()
         }, 1000)
 
         return START_STICKY
@@ -536,12 +583,16 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, fps, bitrate, 0)) {
                     rtspServerCamera.startStream()
                     applyTimestampOverlay()
+                    applyZoom()
+                    applyExposure()
                 } else {
                     android.util.Log.w("CctvServerService", "Codec $selectedCodec preparation failed, falling back to H264")
                     rtspServerCamera.setVideoCodec(VideoCodec.H264)
                     if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, fps, bitrate, 0)) {
                          rtspServerCamera.startStream()
                          applyTimestampOverlay()
+                         applyZoom()
+                         applyExposure()
                          videoCodec = "H264"
                          AppPreferences.setVideoCodec(this, videoCodec)
                     } else {
@@ -666,6 +717,88 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             }
         } catch (e: Exception) {
             android.util.Log.e("CctvServerService", "Failed to toggle flashlight", e)
+        }
+    }
+
+    private fun applyZoom() {
+        if (!::rtspServerCamera.isInitialized || !rtspServerCamera.isStreaming) return
+        try {
+            // Note: RtspServerCamera2 exposes setZoom().
+            rtspServerCamera.setZoom(cameraZoom)
+            android.util.Log.d("CctvServerService", "Zoom set to $cameraZoom")
+        } catch (e: Exception) {
+            android.util.Log.e("CctvServerService", "Failed to set zoom", e)
+        }
+    }
+
+    private fun applyExposure() {
+        if (!::rtspServerCamera.isInitialized || !rtspServerCamera.isStreaming) return
+        // Note: RtspServerCamera2 typically does not expose direct exposure compensation yet
+        // If the library supports it later, we add it here.
+        // rtspServerCamera.setExposure(exposureCompensation)
+        android.util.Log.d("CctvServerService", "Exposure set to $exposureCompensation (Stubbed, waiting for library support)")
+    }
+
+    private fun toggleRecording() {
+        if (!::rtspServerCamera.isInitialized || !rtspServerCamera.isStreaming) return
+        try {
+            if (!isRecording) {
+                // Start tracking to temp file
+                tempRecordFile = File(cacheDir, "temp_record_${System.currentTimeMillis()}.mp4")
+                rtspServerCamera.startRecord(tempRecordFile!!.absolutePath)
+                isRecording = true
+                android.util.Log.d("CctvServerService", "Started local recording to ${tempRecordFile?.absolutePath}")
+            } else {
+                // Stop and copy
+                rtspServerCamera.stopRecord()
+                isRecording = false
+                android.util.Log.d("CctvServerService", "Stopped local recording.")
+                
+                // Copy to SAF
+                val dirStr = AppPreferences.getRecordingDirectory(this)
+                if (dirStr != null && tempRecordFile != null && tempRecordFile!!.exists()) {
+                    val dirUri = Uri.parse(dirStr)
+                    val dirDoc = DocumentFile.fromTreeUri(this, dirUri)
+                    val format = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                    val fileDoc = dirDoc?.createFile("video/mp4", "Record_$format.mp4")
+                    
+                    if (fileDoc != null) {
+                        contentResolver.openOutputStream(fileDoc.uri)?.use { out ->
+                            tempRecordFile!!.inputStream().use { input ->
+                                input.copyTo(out)
+                            }
+                        }
+                        android.util.Log.d("CctvServerService", "Copied recording to SAF: ${fileDoc.uri}")
+                    }
+                    tempRecordFile?.delete()
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CctvServerService", "Recording toggle failed", e)
+        }
+    }
+
+    private fun takePhotoToStorage() {
+        if (!isSurfaceCreated || !::openGlView.isInitialized || !openGlView.holder.surface.isValid) return
+        try {
+            openGlView.takePhoto { bitmap ->
+                val dirStr = AppPreferences.getRecordingDirectory(this)
+                if (dirStr != null) {
+                    val dirUri = Uri.parse(dirStr)
+                    val dirDoc = DocumentFile.fromTreeUri(this, dirUri)
+                    val format = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                    val fileDoc = dirDoc?.createFile("image/jpeg", "Photo_$format.jpg")
+                    
+                    if (fileDoc != null) {
+                        contentResolver.openOutputStream(fileDoc.uri)?.use { out ->
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                        }
+                        android.util.Log.d("CctvServerService", "Saved photo to SAF: ${fileDoc.uri}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CctvServerService", "Photo capture failed", e)
         }
     }
 

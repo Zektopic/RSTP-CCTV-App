@@ -30,9 +30,14 @@ class WebServer(
     private val getNightModeEnabled: () -> Boolean,
     private val getForceSoftware: () -> Boolean,
     private val getShowPreview: () -> Boolean,
+    private val getCameraZoom: () -> Float,
+    private val getExposureCompensation: () -> Int,
     private val onAuthUpdate: (Boolean, String, String) -> Unit,
     private val getBatteryLevel: () -> Int,
-    private val getWifiStrength: () -> Int
+    private val getWifiStrength: () -> Int,
+    private val onToggleRecording: () -> Unit,
+    private val onTakePhoto: () -> Unit,
+    private val isRecordingStatus: () -> Boolean
 ) : NanoHTTPD(8080) {
 
     override fun serve(session: IHTTPSession): Response {
@@ -103,6 +108,16 @@ class WebServer(
             return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "Auth Updated")
         }
 
+        if (uri == "/action/toggle-recording") {
+            onToggleRecording()
+            return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "Recording Toggled")
+        }
+
+        if (uri == "/action/take-photo") {
+            onTakePhoto()
+            return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "Photo Taken")
+        }
+
         // JSON status endpoint
         if (uri == "/status") {
             val streaming = isStreaming()
@@ -126,8 +141,11 @@ class WebServer(
                 "nightModeEnabled":${getNightModeEnabled()},
                 "forceSoftware":${getForceSoftware()},
                 "showPreview":${getShowPreview()},
+                "cameraZoom":${getCameraZoom()},
+                "exposureCompensation":${getExposureCompensation()},
                 "batteryLevel":${getBatteryLevel()},
-                "wifiStrength":${getWifiStrength()}
+                "wifiStrength":${getWifiStrength()},
+                "isRecording":${isRecordingStatus()}
             }""".trimIndent()
             val response = newFixedLengthResponse(Response.Status.OK, "application/json", json)
             response.addHeader("Access-Control-Allow-Origin", "*")
@@ -175,7 +193,7 @@ class WebServer(
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>CCTV Dashboard — $ipAddress</title>
+    <title>IP Webcam — Manupa Wick</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -450,6 +468,34 @@ class WebServer(
         .text-input:focus { border-color: var(--accent); }
         .text-input::placeholder { color: var(--text-secondary); }
 
+        /* Range Slider */
+        .range-slider {
+            width: 100%;
+            margin-top: 8px;
+        }
+        .range-slider input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        .range-slider input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .range-slider input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #2d3143;
+            border-radius: 2px;
+        }
+
         /* Info Card */
         .info-card {
             background: var(--surface);
@@ -533,7 +579,7 @@ class WebServer(
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1>CCTV Dashboard</h1>
+            <h1>IP Webcam</h1>
             <div style="display:flex; gap:12px; align-items:center;">
                 <div style="display:flex; align-items:center; gap:4px; font-size:13px; font-weight:600; color:var(--text-secondary);" title="Battery">
                     <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:currentColor;"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
@@ -569,8 +615,18 @@ class WebServer(
                     Flip Camera
                 </button>
             </div>
+            <div class="controls" style="padding-top:0;">
+                <button class="btn" id="btnRecord" onclick="toggleRecording()">
+                    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>
+                    <span id="btnRecordText">Start Recording</span>
+                </button>
+                <button class="btn" onclick="takePhoto()">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                    Take Photo
+                </button>
+            </div>
         </div>
-        
+
         <!-- Video Settings -->
         <div class="settings-card">
             <h3>Video Settings</h3>
@@ -675,6 +731,24 @@ class WebServer(
                     <span class="toggle-track"></span>
                 </label>
             </div>
+            <div class="setting-row" style="display:block;">
+                <div style="display:flex; justify-content:space-between;">
+                    <span class="setting-label">Camera Zoom</span>
+                    <span id="zoomValue" class="setting-sublabel">1.0x</span>
+                </div>
+                <div class="range-slider">
+                    <input type="range" id="sliderZoom" min="1.0" max="10.0" step="0.1" value="1.0" onchange="setSetting('camera_zoom', this.value)" oninput="document.getElementById('zoomValue').textContent = this.value + 'x'">
+                </div>
+            </div>
+            <div class="setting-row" style="display:block; border-top:none;">
+                <div style="display:flex; justify-content:space-between;">
+                    <span class="setting-label">Exposure</span>
+                    <span id="exposureValue" class="setting-sublabel">0</span>
+                </div>
+                <div class="range-slider">
+                    <input type="range" id="sliderExposure" min="-100" max="100" step="1" value="0" onchange="setSetting('exposure_compensation', this.value)" oninput="document.getElementById('exposureValue').textContent = this.value">
+                </div>
+            </div>
         </div>
 
         <!-- Authentication -->
@@ -717,7 +791,7 @@ class WebServer(
             </div>
         </div>
         
-        <div class="footer">CCTV Server • $ipAddress</div>
+        <div class="footer">© Manupa Wick • $ipAddress</div>
     </div>
     
     <div class="toast" id="toast"></div>
@@ -741,6 +815,8 @@ class WebServer(
                     const statusText = document.getElementById('statusText');
                     const btnStream = document.getElementById('btnStream');
                     const btnStreamText = document.getElementById('btnStreamText');
+                    const btnRecord = document.getElementById('btnRecord');
+                    const btnRecordText = document.getElementById('btnRecordText');
                     const chipCodec = document.getElementById('chipCodec');
                     const chipRes = document.getElementById('chipRes');
                     const batteryText = document.getElementById('batteryText');
@@ -761,6 +837,14 @@ class WebServer(
                         btnStreamText.textContent = 'Start';
                     }
                     
+                    if (data.isRecording) {
+                        btnRecord.className = 'btn danger';
+                        btnRecordText.textContent = 'Stop Recording';
+                    } else {
+                        btnRecord.className = 'btn';
+                        btnRecordText.textContent = 'Start Recording';
+                    }
+
                     chipCodec.textContent = data.codec;
                     chipRes.textContent = data.resolution;
                     
@@ -784,6 +868,12 @@ class WebServer(
                         document.getElementById('authUsername').value = data.username || '';
                         initialLoad = false;
                     }
+                    
+                    // Sync Zoom and Exposure
+                    document.getElementById('sliderZoom').value = data.cameraZoom;
+                    document.getElementById('zoomValue').textContent = data.cameraZoom + 'x';
+                    document.getElementById('sliderExposure').value = data.exposureCompensation;
+                    document.getElementById('exposureValue').textContent = data.exposureCompensation;
                     
                     // Update RTSP URL dynamically
                     if (data.rtspUrl) {
@@ -825,6 +915,17 @@ class WebServer(
         function setSetting(key, value) {
             fetch('/action/set-setting?key=' + encodeURIComponent(key) + '&value=' + encodeURIComponent(value))
                 .then(() => { showToast(key.replace(/_/g, ' ') + ': ' + value); fetchStatus(); });
+        }
+
+        function toggleRecording() {
+            fetch('/action/toggle-recording').then(() => { 
+                showToast("Toggle Recording"); 
+                fetchStatus(); 
+            });
+        }
+        
+        function takePhoto() {
+            fetch('/action/take-photo').then(() => showToast("Taking Photo..."));
         }
 
         function updateAuth() {

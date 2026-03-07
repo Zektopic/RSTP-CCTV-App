@@ -407,6 +407,114 @@
                     android:text="@string/night_mode_toggle"
                     android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
+                <!-- Camera Zoom -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/camera_zoom"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/slider_zoom"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:value="1.0"
+                    android:valueFrom="1.0"
+                    android:valueTo="10.0"
+                    android:stepSize="0.1" />
+
+                <!-- Exposure Compensation -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/exposure_compensation"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/slider_exposure"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:value="0"
+                    android:valueFrom="-100"
+                    android:valueTo="100"
+                    android:stepSize="1" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+    <!-- ═══════════════════════════════════════ -->
+        <!-- Video Recording Card                    -->
+        <!-- ═══════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:contentPadding="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/section_recording"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                    android:textColor="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="To record videos and save photos, an explicit directory access permission is now required on Android 10+."
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:layout_marginBottom="8dp"/>
+
+                <Button
+                    android:id="@+id/btn_select_directory"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/save_videos_to" />
+                    
+                <TextView
+                    android:id="@+id/text_selected_directory"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="No directory selected"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:layout_marginBottom="16dp"/>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    
+                    <Button
+                        android:id="@+id/btn_record"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="@string/start_recording" />
+
+                    <Button
+                        android:id="@+id/btn_photo"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:text="@string/take_photo" />
+                </LinearLayout>
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -522,6 +630,16 @@
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- Copyright -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/author_copyright"
+            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+            android:textColor="?android:attr/textColorSecondary"
+            android:layout_marginTop="8dp" />
 
     </LinearLayout>
 </ScrollView>

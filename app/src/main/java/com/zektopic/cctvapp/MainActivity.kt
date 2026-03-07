@@ -11,10 +11,12 @@ import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Bundle
 import android.provider.Settings
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -26,6 +28,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val permissions = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
     private val permissionRequestCode = 100
+
+    private val directoryPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            AppPreferences.setRecordingDirectory(this, uri.toString())
+            binding.textSelectedDirectory.text = uri.toString()
+            Toast.makeText(this, "Directory Selected", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private var resolutions = arrayOf<String>()
     private val codecs = arrayOf("H264", "H265", "VP9", "AV1")
@@ -133,6 +147,16 @@ class MainActivity : AppCompatActivity() {
         // Load saved flashlight & night mode settings
         binding.switchFlashlight.isChecked = AppPreferences.getFlashlightEnabled(this)
         binding.switchNightMode.isChecked = AppPreferences.getNightModeEnabled(this)
+        
+        // Load zoom & exposure
+        binding.sliderZoom.value = AppPreferences.getCameraZoom(this)
+        binding.sliderExposure.value = AppPreferences.getExposureCompensation(this).toFloat()
+
+        // Load saved directory
+        val savedDir = AppPreferences.getRecordingDirectory(this)
+        if (savedDir != null) {
+            binding.textSelectedDirectory.text = savedDir
+        }
     }
 
     private fun setAuthFieldsEnabled(enabled: Boolean) {
@@ -282,6 +306,67 @@ class MainActivity : AppCompatActivity() {
                 startService(intent)
             }
         }
+
+        binding.sliderZoom.addOnChangeListener { slider, value, fromUser ->
+            if (fromUser) {
+                AppPreferences.setCameraZoom(this, value)
+                if (binding.switchServer.isChecked) {
+                    val intent = Intent(this, CctvServerService::class.java).apply {
+                        action = "ACTION_SET_ZOOM"
+                        putExtra("camera_zoom", value)
+                    }
+                    startService(intent)
+                }
+            }
+        }
+
+        binding.sliderExposure.addOnChangeListener { slider, value, fromUser ->
+            if (fromUser) {
+                val intValue = value.toInt()
+                AppPreferences.setExposureCompensation(this, intValue)
+                if (binding.switchServer.isChecked) {
+                    val intent = Intent(this, CctvServerService::class.java).apply {
+                        action = "ACTION_SET_EXPOSURE"
+                        putExtra("exposure_compensation", intValue)
+                    }
+                    startService(intent)
+                }
+            }
+        }
+
+        binding.btnSelectDirectory.setOnClickListener {
+            directoryPickerLauncher.launch(null)
+        }
+
+        binding.btnRecord.setOnClickListener {
+            if (binding.switchServer.isChecked) {
+                if (AppPreferences.getRecordingDirectory(this) == null) {
+                    Toast.makeText(this, getString(R.string.recording_path_not_set), Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val intent = Intent(this, CctvServerService::class.java).apply {
+                    action = "ACTION_TOGGLE_RECORDING"
+                }
+                startService(intent)
+            } else {
+                Toast.makeText(this, "Server must be running first", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        binding.btnPhoto.setOnClickListener {
+            if (binding.switchServer.isChecked) {
+                if (AppPreferences.getRecordingDirectory(this) == null) {
+                    Toast.makeText(this, getString(R.string.recording_path_not_set), Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val intent = Intent(this, CctvServerService::class.java).apply {
+                    action = "ACTION_TAKE_PHOTO"
+                }
+                startService(intent)
+            } else {
+                Toast.makeText(this, "Server must be running first", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun updateServerStatus(isRunning: Boolean) {
@@ -330,6 +415,8 @@ class MainActivity : AppCompatActivity() {
             putExtra("timestamp_size", binding.spinnerOverlaySize.text.toString())
             putExtra("flashlight_enabled", binding.switchFlashlight.isChecked)
             putExtra("night_mode_enabled", binding.switchNightMode.isChecked)
+            putExtra("camera_zoom", binding.sliderZoom.value)
+            putExtra("exposure_compensation", binding.sliderExposure.value.toInt())
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
