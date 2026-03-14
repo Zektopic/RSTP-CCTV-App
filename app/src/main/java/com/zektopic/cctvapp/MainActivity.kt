@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private val codecs = arrayOf("H264", "H265", "VP9", "AV1")
     private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
     private val overlaySizes = arrayOf("Small", "Medium", "Large")
+    private var isSidebarCollapsed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,6 +110,11 @@ class MainActivity : AppCompatActivity() {
         // Load saved flashlight & night mode settings
         binding.switchFlashlight.isChecked = AppPreferences.getFlashlightEnabled(this)
         binding.switchNightMode.isChecked = AppPreferences.getNightModeEnabled(this)
+
+        // Load detection settings
+        binding.switchDetectionEnabled.isChecked = AppPreferences.getDetectionEnabled(this)
+        binding.switchMotionDetection.isChecked = AppPreferences.getMotionDetectionEnabled(this)
+        binding.switchObjectDetection.isChecked = AppPreferences.getObjectDetectionEnabled(this)
     }
 
     private fun setAuthFieldsEnabled(enabled: Boolean) {
@@ -252,6 +258,50 @@ class MainActivity : AppCompatActivity() {
                 startService(intent)
             }
         }
+
+        binding.switchDetectionEnabled.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setDetectionEnabled(this, isChecked)
+            restartServer()
+        }
+
+        binding.switchMotionDetection.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setMotionDetectionEnabled(this, isChecked)
+            restartServer()
+        }
+
+        binding.switchObjectDetection.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setObjectDetectionEnabled(this, isChecked)
+            restartServer()
+        }
+
+        binding.btnToggleSidebar.setOnClickListener {
+            isSidebarCollapsed = !isSidebarCollapsed
+            applySidebarState()
+        }
+
+        binding.btnNavSettings.setOnClickListener {
+            // Already on settings screen.
+        }
+
+        binding.btnNavEvents.setOnClickListener {
+            startActivity(Intent(this, EventsActivity::class.java))
+        }
+    }
+
+    private fun applySidebarState() {
+        val widthDp = if (isSidebarCollapsed) 56 else 88
+        val widthPx = (widthDp * resources.displayMetrics.density).toInt()
+        val params = binding.sidebarContainer.layoutParams
+        params.width = widthPx
+        binding.sidebarContainer.layoutParams = params
+
+        binding.btnNavSettings.text = if (isSidebarCollapsed) "S" else getString(R.string.nav_settings)
+        binding.btnNavEvents.text = if (isSidebarCollapsed) "E" else getString(R.string.nav_events)
+        binding.btnToggleSidebar.text = if (isSidebarCollapsed) {
+            getString(R.string.sidebar_expand_symbol)
+        } else {
+            getString(R.string.sidebar_collapse_symbol)
+        }
     }
 
     private fun updateServerStatus(isRunning: Boolean) {
@@ -298,6 +348,9 @@ class MainActivity : AppCompatActivity() {
             putExtra("timestamp_size", binding.spinnerOverlaySize.text.toString())
             putExtra("flashlight_enabled", binding.switchFlashlight.isChecked)
             putExtra("night_mode_enabled", binding.switchNightMode.isChecked)
+            putExtra("detection_enabled", binding.switchDetectionEnabled.isChecked)
+            putExtra("motion_detection_enabled", binding.switchMotionDetection.isChecked)
+            putExtra("object_detection_enabled", binding.switchObjectDetection.isChecked)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

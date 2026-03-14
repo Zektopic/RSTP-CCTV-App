@@ -146,4 +146,30 @@ object AppPreferences {
     fun setNightModeEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_NIGHT_MODE_ENABLED, enabled).apply()
     }
+
+    // --- Detection ---
+    private const val KEY_DETECTION_ENABLED = "detection_enabled"
+    private const val KEY_MOTION_DETECTION_ENABLED = "motion_detection_enabled"
+    private const val KEY_OBJECT_DETECTION_ENABLED = "object_detection_enabled"
+
+    fun getDetectionEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_DETECTION_ENABLED, false)
+
+    fun setDetectionEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_DETECTION_ENABLED, enabled).apply()
+    }
+
+    fun getMotionDetectionEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_MOTION_DETECTION_ENABLED, true)
+
+    fun setMotionDetectionEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_MOTION_DETECTION_ENABLED, enabled).apply()
+    }
+
+    fun getObjectDetectionEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_OBJECT_DETECTION_ENABLED, true)
+
+    fun setObjectDetectionEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_OBJECT_DETECTION_ENABLED, enabled).apply()
+    }
 }

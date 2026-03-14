@@ -43,4 +43,17 @@
     <string name="section_camera_controls">Camera Controls</string>
     <string name="flashlight_toggle">Flashlight</string>
     <string name="night_mode_toggle">Night Mode (Auto Flash)</string>
+
+    <!-- Detection strings -->
+    <string name="section_detection">Detection</string>
+    <string name="detection_enabled">Enable Detection</string>
+    <string name="motion_detection_enabled">Motion Detection</string>
+    <string name="object_detection_enabled">People/Animal Detection (LiteRT)</string>
+    <string name="section_events">Saved Events</string>
+    <string name="refresh_events">Refresh</string>
+    <string name="no_events_yet">No events yet. Enable detection and wait for motion/person/animal triggers.</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_events">Events</string>
+    <string name="sidebar_collapse_symbol">«</string>
+    <string name="sidebar_expand_symbol">»</string>
 </resources>

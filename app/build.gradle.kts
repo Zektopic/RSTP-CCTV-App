@@ -35,6 +35,13 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    // Workaround for third-party JNI libs that are not yet 16KB page aligned.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {
@@ -48,4 +55,5 @@ dependencies {
     implementation("com.github.pedroSG94.RootEncoder:library:2.6.7")
     implementation("com.github.pedroSG94:RTSP-Server:master-SNAPSHOT")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
 }
