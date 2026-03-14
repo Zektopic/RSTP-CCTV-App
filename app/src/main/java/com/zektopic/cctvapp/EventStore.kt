@@ -138,6 +138,10 @@ class EventStore(
         }
     }
 
+    fun listRecentEvents(limit: Int = 100): List<DetectionEvent> {
+        return listEvents(null, limit.coerceIn(1, 500))
+    }
+
     private fun addEvent(event: DetectionEvent) {
         synchronized(lock) {
             val events = readEventsInternal()

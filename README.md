@@ -53,10 +53,130 @@ Available endpoints:
 - `GET /action/create-test-event`
     - Creates a synthetic test event using the latest snapshot.
 
+Response format example (`GET /events?limit=2`):
+
+```json
+{
+    "events": [
+        {
+            "id": "0a5d7d4f-...",
+            "type": "person",
+            "score": 0.91,
+            "start_time": 1741963450123,
+            "end_time": 1741963450123,
+            "snapshot": "0a5d7d4f-..._snapshot.jpg",
+            "has_snapshot": true,
+            "has_clip": false,
+            "created_at": 1741963450123
+        }
+    ],
+    "count": 1
+}
+```
+
+### Quick methods to fetch/copy events
+
+PowerShell (copy to clipboard):
+
+```powershell
+$events = Invoke-RestMethod -Uri "http://<server-ip>:8080/events?limit=500"
+$events | ConvertTo-Json -Depth 10 | Set-Clipboard
+```
+
+PowerShell (save to file):
+
+```powershell
+Invoke-WebRequest -Uri "http://<server-ip>:8080/events?limit=500" -OutFile ".\events.json"
+```
+
+cURL:
+
+```bash
+curl "http://<server-ip>:8080/events?limit=100"
+```
+
+Python:
+
+```python
+import requests
+
+base = "http://<server-ip>:8080"
+events = requests.get(f"{base}/events", params={"limit": 100}, timeout=10).json()
+print(events)
+```
+
+### Home Assistant integration examples
+
+`configuration.yaml` (REST sensor showing latest event type):
+
+```yaml
+sensor:
+    - platform: rest
+        name: cctv_latest_event
+        resource: http://<server-ip>:8080/events?limit=1
+        scan_interval: 10
+        value_template: >-
+            {% set e = value_json.events %}
+            {{ e[0].type if e and e | count > 0 else 'none' }}
+        json_attributes_path: "$.events[0]"
+        json_attributes:
+            - id
+            - score
+            - start_time
+            - has_snapshot
+```
+
+`configuration.yaml` (REST command to create a test event):
+
+```yaml
+rest_command:
+    cctv_create_test_event:
+        url: "http://<server-ip>:8080/action/create-test-event"
+        method: get
+```
+
+Automation idea:
+
+- Trigger on `sensor.cctv_latest_event` state change.
+- Send a mobile notification with event type and link to snapshot:
+    - `http://<server-ip>:8080/events/<event_id>/snapshot.jpg`
+
+### Custom script integration patterns
+
+Recommended polling strategy:
+
+1. Store a `last_seen_timestamp` (epoch ms).
+2. Poll `GET /events?since=<last_seen_timestamp>&limit=100` every few seconds.
+3. Process returned events sorted by `start_time`.
+4. Update `last_seen_timestamp` to the newest processed event.
+5. Optionally download snapshot via `GET /events/<id>/snapshot.jpg`.
+
+Minimal Python poller:
+
+```python
+import time
+import requests
+
+base = "http://<server-ip>:8080"
+last_seen = 0
+
+while True:
+        r = requests.get(f"{base}/events", params={"since": last_seen, "limit": 100}, timeout=10)
+        data = r.json()
+        events = sorted(data.get("events", []), key=lambda e: e.get("start_time", 0))
+
+        for e in events:
+            print(f"[{e.get('type')}] id={e.get('id')} score={e.get('score')}")
+            last_seen = max(last_seen, int(e.get("start_time", 0)))
+
+        time.sleep(5)
+```
+
 Retention behavior:
 
 - Events and media files are retained for 72 hours.
 - Cleanup runs at service startup and then periodically while the service is running.
+- Yes, events are deleted automatically after about 3 days (72 hours), including associated snapshots/clips when present.
 
 ## Detection (Motion + LiteRT)
 

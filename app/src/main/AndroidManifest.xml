@@ -32,6 +32,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".EventsActivity"
+            android:exported="false" />
+
         <service android:name=".CctvServerService"
             android:foregroundServiceType="camera" />
 

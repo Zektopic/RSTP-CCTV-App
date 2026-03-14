@@ -272,6 +272,14 @@ class MainActivity : AppCompatActivity() {
             AppPreferences.setObjectDetectionEnabled(this, isChecked)
             restartServer()
         }
+
+        binding.btnNavSettings.setOnClickListener {
+            // Already on settings screen.
+        }
+
+        binding.btnNavEvents.setOnClickListener {
+            startActivity(Intent(this, EventsActivity::class.java))
+        }
     }
 
     private fun updateServerStatus(isRunning: Boolean) {
