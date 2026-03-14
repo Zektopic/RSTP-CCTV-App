@@ -8,6 +8,7 @@
     tools:context=".EventsActivity">
 
     <LinearLayout
+        android:id="@+id/sidebar_container"
         android:layout_width="88dp"
         android:layout_height="match_parent"
         android:background="?attr/colorSurfaceContainerLow"
@@ -15,6 +16,16 @@
         android:orientation="vertical"
         android:paddingTop="24dp"
         android:paddingHorizontal="8dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_toggle_sidebar"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:minHeight="0dp"
+            android:paddingVertical="4dp"
+            android:text="@string/sidebar_collapse_symbol" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_nav_settings"
