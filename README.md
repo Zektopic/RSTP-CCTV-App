@@ -22,6 +22,8 @@ Turn your old or unused Android device into a fully functional RTSP CCTV camera.
     -   Toggle Local Preview (save battery by hiding the preview).
     -   Force Software Encoding option.
 -   **Web Interface**: Includes a built-in web server for easy management and snapshots.
+-   **Event Storage (Phase 1)**: Local event persistence with automatic 72-hour retention cleanup.
+-   **Events API (Phase 1)**: Frigate-style event listing and per-event media endpoints on port 8080.
 
 ## Usage
 
@@ -30,6 +32,54 @@ Turn your old or unused Android device into a fully functional RTSP CCTV camera.
 3.  **Start Server**: Toggle the "Server" switch to ON.
 4.  **Connect**: Use the IP address displayed on the screen to connect via an RTSP client.
     *   Example: `rtsp://192.168.1.X:8554/live/stream` (Exact URL depends on library implementation, usually widely compatible).
+
+## Events API (Phase 1)
+
+Base URL:
+
+`http://<server-ip>:8080`
+
+Available endpoints:
+
+- `GET /events?since=<epoch_ms>&limit=<n>`
+    - Returns stored events sorted by newest first.
+    - `since` is optional. `limit` defaults to 100 and is capped at 500.
+- `GET /events/<event_id>`
+    - Returns one event by id.
+- `GET /events/<event_id>/snapshot.jpg`
+    - Returns the event snapshot if present.
+- `GET /events/<event_id>/clip.mp4`
+    - Reserved for clip retrieval (clip persistence comes in later phases).
+- `GET /action/create-test-event`
+    - Creates a synthetic test event using the latest snapshot.
+
+Retention behavior:
+
+- Events and media files are retained for 72 hours.
+- Cleanup runs at service startup and then periodically while the service is running.
+
+## Detection (Motion + LiteRT)
+
+The app now includes:
+
+- Motion detection (frame-difference based)
+- People/animal detection using LiteRT/TensorFlow Object Detection
+
+Enable/disable from:
+
+- Android app Detection card
+- Web dashboard (`http://<server-ip>:8080`) Detection section
+
+LiteRT model setup:
+
+1. Place your TensorFlow Lite model at:
+    `app/src/main/assets/detect.tflite`
+2. Start streaming and enable:
+    - Enable Detection
+    - Motion Detection
+    - People/Animal Detection (LiteRT)
+
+If `detect.tflite` is missing, motion detection still works, but people/animal detection will remain unavailable.
 
 ## Build & Install
 

@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import fi.iki.elonen.NanoHTTPD
 import java.io.ByteArrayInputStream
+import java.io.File
+import java.io.FileInputStream
 
 class WebServer(
     private val context: Context,
@@ -30,7 +32,16 @@ class WebServer(
     private val getNightModeEnabled: () -> Boolean,
     private val getForceSoftware: () -> Boolean,
     private val getShowPreview: () -> Boolean,
+    private val getDetectionEnabled: () -> Boolean,
+    private val getMotionDetectionEnabled: () -> Boolean,
+    private val getObjectDetectionEnabled: () -> Boolean,
+    private val getObjectDetectorReady: () -> Boolean,
     private val onAuthUpdate: (Boolean, String, String) -> Unit,
+    private val listEventsJson: (Long?, Int) -> String,
+    private val getEventJson: (String) -> String?,
+    private val getEventSnapshotFile: (String) -> File?,
+    private val getEventClipFile: (String) -> File?,
+    private val onCreateTestEvent: () -> String,
     private val getBatteryLevel: () -> Int,
     private val getWifiStrength: () -> Int
 ) : NanoHTTPD(8080) {
@@ -103,6 +114,67 @@ class WebServer(
             return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "Auth Updated")
         }
 
+        if (uri == "/action/create-test-event") {
+            val json = onCreateTestEvent()
+            val response = newFixedLengthResponse(Response.Status.OK, "application/json", json)
+            response.addHeader("Access-Control-Allow-Origin", "*")
+            return response
+        }
+
+        if (uri == "/events") {
+            val since = session.parameters["since"]?.firstOrNull()?.toLongOrNull()
+            val limit = session.parameters["limit"]?.firstOrNull()?.toIntOrNull() ?: 100
+            val response = newFixedLengthResponse(Response.Status.OK, "application/json", listEventsJson(since, limit))
+            response.addHeader("Access-Control-Allow-Origin", "*")
+            return response
+        }
+
+        if (uri.startsWith("/events/")) {
+            val parts = uri.trim('/').split('/')
+            if (parts.size >= 2) {
+                val eventId = parts[1]
+
+                if (parts.size == 2) {
+                    val eventJson = getEventJson(eventId)
+                    return if (eventJson != null) {
+                        val response = newFixedLengthResponse(Response.Status.OK, "application/json", eventJson)
+                        response.addHeader("Access-Control-Allow-Origin", "*")
+                        response
+                    } else {
+                        newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Event not found")
+                    }
+                }
+
+                if (parts.size == 3 && parts[2] == "snapshot.jpg") {
+                    val snapshotFile = getEventSnapshotFile(eventId)
+                    return if (snapshotFile != null && snapshotFile.exists()) {
+                        newFixedLengthResponse(
+                            Response.Status.OK,
+                            "image/jpeg",
+                            FileInputStream(snapshotFile),
+                            snapshotFile.length()
+                        )
+                    } else {
+                        newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Snapshot not found")
+                    }
+                }
+
+                if (parts.size == 3 && parts[2] == "clip.mp4") {
+                    val clipFile = getEventClipFile(eventId)
+                    return if (clipFile != null && clipFile.exists()) {
+                        newFixedLengthResponse(
+                            Response.Status.OK,
+                            "video/mp4",
+                            FileInputStream(clipFile),
+                            clipFile.length()
+                        )
+                    } else {
+                        newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Clip not found")
+                    }
+                }
+            }
+        }
+
         // JSON status endpoint
         if (uri == "/status") {
             val streaming = isStreaming()
@@ -126,6 +198,10 @@ class WebServer(
                 "nightModeEnabled":${getNightModeEnabled()},
                 "forceSoftware":${getForceSoftware()},
                 "showPreview":${getShowPreview()},
+                "detectionEnabled":${getDetectionEnabled()},
+                "motionDetectionEnabled":${getMotionDetectionEnabled()},
+                "objectDetectionEnabled":${getObjectDetectionEnabled()},
+                "objectDetectorReady":${getObjectDetectorReady()},
                 "batteryLevel":${getBatteryLevel()},
                 "wifiStrength":${getWifiStrength()}
             }""".trimIndent()
@@ -677,6 +753,44 @@ class WebServer(
             </div>
         </div>
 
+        <!-- Detection -->
+        <div class="settings-card">
+            <h3>Detection (LiteRT + Motion)</h3>
+            <div class="setting-row">
+                <div>
+                    <span class="setting-label">Enable Detection</span>
+                    <div class="setting-sublabel">Master switch for event detection</div>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleDetectionEnabled" onchange="setSetting('detection_enabled', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">Motion Detection</span>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleMotionDetection" onchange="setSetting('motion_detection_enabled', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row">
+                <div>
+                    <span class="setting-label">People/Animal Detection</span>
+                    <div class="setting-sublabel">Uses LiteRT TensorFlow model from assets/detect.tflite</div>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleObjectDetection" onchange="setSetting('object_detection_enabled', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row">
+                <div>
+                    <span class="setting-label">Model Status</span>
+                    <div class="setting-sublabel" id="detectorStatusText">Waiting…</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Authentication -->
         <div class="settings-card">
             <h3>Authentication</h3>
@@ -777,6 +891,13 @@ class WebServer(
                     document.getElementById('sizeSelect').value = data.timestampSize;
                     document.getElementById('toggleFlashlight').checked = data.flashlightEnabled;
                     document.getElementById('toggleNightMode').checked = data.nightModeEnabled;
+                    document.getElementById('toggleDetectionEnabled').checked = data.detectionEnabled;
+                    document.getElementById('toggleMotionDetection').checked = data.motionDetectionEnabled;
+                    document.getElementById('toggleObjectDetection').checked = data.objectDetectionEnabled;
+                    const detectorStatusText = document.getElementById('detectorStatusText');
+                    detectorStatusText.textContent = data.objectDetectorReady
+                        ? 'LiteRT model loaded'
+                        : 'Model missing: add app/src/main/assets/detect.tflite';
                     
                     // Sync auth
                     document.getElementById('toggleAuth').checked = data.authEnabled;

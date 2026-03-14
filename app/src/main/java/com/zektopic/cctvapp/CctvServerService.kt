@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.ImageFormat
 import android.graphics.PixelFormat
@@ -38,6 +39,7 @@ import java.net.Inet4Address
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 
 class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
@@ -66,10 +68,25 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private var timestampSize = "Medium"
     private var flashlightEnabled = false
     private var nightModeEnabled = false
+    private var detectionEnabled = false
+    private var motionDetectionEnabled = true
+    private var objectDetectionEnabled = true
     private var isLanternOn = false
     private var sensorManager: SensorManager? = null
     private var lightSensor: Sensor? = null
     private var textFilter: TextObjectFilterRender? = null
+    private lateinit var eventStore: EventStore
+    private val retentionHandler = Handler(Looper.getMainLooper())
+    private val retentionRunnable = object : Runnable {
+        override fun run() {
+            try {
+                eventStore.cleanupExpired()
+            } catch (e: Exception) {
+                android.util.Log.e("CctvServerService", "Retention cleanup failed", e)
+            }
+            retentionHandler.postDelayed(this, 60 * 60 * 1000L)
+        }
+    }
     private val timestampHandler = Handler(Looper.getMainLooper())
     private val timestampRunnable = object : Runnable {
         override fun run() {
@@ -78,6 +95,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
     private val currentSnapshot = AtomicReference<ByteArray>(null)
+    private val detectionExecutor = Executors.newSingleThreadExecutor()
+    private val motionDetector = MotionDetector()
+    private lateinit var liteRtObjectDetector: LiteRtObjectDetector
+    private val lastEventMsByType = mutableMapOf<String, Long>()
     private val snapshotHandler = Handler(Looper.getMainLooper())
     private val snapshotRunnable = object : Runnable {
         override fun run() {
@@ -95,6 +116,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        eventStore = EventStore(this)
+        eventStore.cleanupExpired()
 
         // Load saved settings as defaults
         videoCodec = AppPreferences.getVideoCodec(this)
@@ -111,6 +134,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         timestampSize = AppPreferences.getTimestampSize(this)
         flashlightEnabled = AppPreferences.getFlashlightEnabled(this)
         nightModeEnabled = AppPreferences.getNightModeEnabled(this)
+        detectionEnabled = AppPreferences.getDetectionEnabled(this)
+        motionDetectionEnabled = AppPreferences.getMotionDetectionEnabled(this)
+        objectDetectionEnabled = AppPreferences.getObjectDetectionEnabled(this)
+        liteRtObjectDetector = LiteRtObjectDetector(this)
 
         // Setup light sensor for night mode
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -240,6 +267,18 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                         AppPreferences.setShowPreview(this, showPreview)
                         updateOverlaySize()
                     }
+                    "detection_enabled" -> {
+                        detectionEnabled = value.toBoolean()
+                        AppPreferences.setDetectionEnabled(this, detectionEnabled)
+                    }
+                    "motion_detection_enabled" -> {
+                        motionDetectionEnabled = value.toBoolean()
+                        AppPreferences.setMotionDetectionEnabled(this, motionDetectionEnabled)
+                    }
+                    "object_detection_enabled" -> {
+                        objectDetectionEnabled = value.toBoolean()
+                        AppPreferences.setObjectDetectionEnabled(this, objectDetectionEnabled)
+                    }
                 }
             },
             getShowTimestamp = { showTimestamp },
@@ -250,6 +289,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             getNightModeEnabled = { nightModeEnabled },
             getForceSoftware = { forceSoftware },
             getShowPreview = { showPreview },
+            getDetectionEnabled = { detectionEnabled },
+            getMotionDetectionEnabled = { motionDetectionEnabled },
+            getObjectDetectionEnabled = { objectDetectionEnabled },
+            getObjectDetectorReady = { liteRtObjectDetector.isReady() },
             onAuthUpdate = { enabled, username, password ->
                 authEnabled = enabled
                 authUsername = username
@@ -265,11 +308,20 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     }
                 }
             },
+            listEventsJson = { sinceMs, limit -> eventStore.listEventsAsJson(sinceMs, limit) },
+            getEventJson = { id -> eventStore.getEventAsJson(id) },
+            getEventSnapshotFile = { id -> eventStore.getEventSnapshotFile(id) },
+            getEventClipFile = { id -> eventStore.getEventClipFile(id) },
+            onCreateTestEvent = {
+                val event = eventStore.createTestEvent(currentSnapshot.get())
+                event.toJsonObject().toString()
+            },
             getBatteryLevel = { getBatteryLevel() },
             getWifiStrength = { getWifiStrength() }
         )
         webServer.start()
         snapshotHandler.post(snapshotRunnable)
+        retentionHandler.post(retentionRunnable)
     }
 
     private fun getBatteryLevel(): Int {
@@ -310,11 +362,58 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             openGlView.takePhoto { bitmap -> 
                 val stream = ByteArrayOutputStream()
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 50, stream)
-                currentSnapshot.set(stream.toByteArray())
+                val jpeg = stream.toByteArray()
+                currentSnapshot.set(jpeg)
+                runDetectionPipelineIfEnabled(jpeg)
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private fun runDetectionPipelineIfEnabled(snapshotJpeg: ByteArray) {
+        if (!detectionEnabled || (!motionDetectionEnabled && !objectDetectionEnabled)) return
+
+        detectionExecutor.execute {
+            try {
+                val bitmap = BitmapFactory.decodeByteArray(snapshotJpeg, 0, snapshotJpeg.size) ?: return@execute
+
+                if (motionDetectionEnabled) {
+                    val motion = motionDetector.isMotionDetected(bitmap)
+                    if (motion.first) {
+                        maybeCreateDetectionEvent("motion", motion.second, snapshotJpeg)
+                    }
+                }
+
+                if (objectDetectionEnabled) {
+                    val detections = liteRtObjectDetector.detect(bitmap)
+                    val person = detections.maxByOrNull { if (it.label == "person") it.score else -1f }
+                    if (person != null && person.label == "person") {
+                        maybeCreateDetectionEvent("person", person.score.toDouble(), snapshotJpeg)
+                    }
+
+                    val animalDetections = detections.filter {
+                        it.label in setOf("cat", "dog", "bird", "horse", "sheep", "cow")
+                    }
+                    val bestAnimal = animalDetections.maxByOrNull { it.score }
+                    if (bestAnimal != null) {
+                        maybeCreateDetectionEvent("animal", bestAnimal.score.toDouble(), snapshotJpeg)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("CctvServerService", "Detection pipeline failed", e)
+            }
+        }
+    }
+
+    private fun maybeCreateDetectionEvent(type: String, score: Double, snapshotJpeg: ByteArray) {
+        val now = System.currentTimeMillis()
+        val lastAt = lastEventMsByType[type] ?: 0L
+        val cooldownMs = 10_000L
+        if (now - lastAt < cooldownMs) return
+
+        lastEventMsByType[type] = now
+        eventStore.createDetectionEvent(type, score, snapshotJpeg)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -364,6 +463,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         val newShowDate = intent?.getBooleanExtra("show_date", AppPreferences.getShowDate(this)) ?: false
         val newTimestampPosition = intent?.getStringExtra("timestamp_position") ?: AppPreferences.getTimestampPosition(this)
         val newTimestampSize = intent?.getStringExtra("timestamp_size") ?: AppPreferences.getTimestampSize(this)
+        val newDetectionEnabled = intent?.getBooleanExtra("detection_enabled", AppPreferences.getDetectionEnabled(this)) ?: false
+        val newMotionDetectionEnabled = intent?.getBooleanExtra("motion_detection_enabled", AppPreferences.getMotionDetectionEnabled(this)) ?: true
+        val newObjectDetectionEnabled = intent?.getBooleanExtra("object_detection_enabled", AppPreferences.getObjectDetectionEnabled(this)) ?: true
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CCTV Server")
@@ -399,6 +501,12 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 AppPreferences.setShowDate(this, showDate)
                 AppPreferences.setTimestampPosition(this, timestampPosition)
                 AppPreferences.setTimestampSize(this, timestampSize)
+                detectionEnabled = newDetectionEnabled
+                motionDetectionEnabled = newMotionDetectionEnabled
+                objectDetectionEnabled = newObjectDetectionEnabled
+                AppPreferences.setDetectionEnabled(this, detectionEnabled)
+                AppPreferences.setMotionDetectionEnabled(this, motionDetectionEnabled)
+                AppPreferences.setObjectDetectionEnabled(this, objectDetectionEnabled)
                 applyTimestampOverlay()
                 return START_STICKY
             }
@@ -431,6 +539,13 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         AppPreferences.setShowDate(this, showDate)
         AppPreferences.setTimestampPosition(this, timestampPosition)
         AppPreferences.setTimestampSize(this, timestampSize)
+
+        detectionEnabled = newDetectionEnabled
+        motionDetectionEnabled = newMotionDetectionEnabled
+        objectDetectionEnabled = newObjectDetectionEnabled
+        AppPreferences.setDetectionEnabled(this, detectionEnabled)
+        AppPreferences.setMotionDetectionEnabled(this, motionDetectionEnabled)
+        AppPreferences.setObjectDetectionEnabled(this, objectDetectionEnabled)
 
         // Update flashlight & night mode settings
         val newFlashlightEnabled = intent?.getBooleanExtra("flashlight_enabled", AppPreferences.getFlashlightEnabled(this)) ?: false
@@ -694,7 +809,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     override fun onDestroy() {
         super.onDestroy()
         snapshotHandler.removeCallbacks(snapshotRunnable)
+        retentionHandler.removeCallbacks(retentionRunnable)
         timestampHandler.removeCallbacks(timestampRunnable)
+        detectionExecutor.shutdownNow()
         sensorManager?.unregisterListener(lightSensorListener)
         
         webServer.stop()

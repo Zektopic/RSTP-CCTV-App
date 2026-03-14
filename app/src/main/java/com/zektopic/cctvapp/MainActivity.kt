@@ -109,6 +109,11 @@ class MainActivity : AppCompatActivity() {
         // Load saved flashlight & night mode settings
         binding.switchFlashlight.isChecked = AppPreferences.getFlashlightEnabled(this)
         binding.switchNightMode.isChecked = AppPreferences.getNightModeEnabled(this)
+
+        // Load detection settings
+        binding.switchDetectionEnabled.isChecked = AppPreferences.getDetectionEnabled(this)
+        binding.switchMotionDetection.isChecked = AppPreferences.getMotionDetectionEnabled(this)
+        binding.switchObjectDetection.isChecked = AppPreferences.getObjectDetectionEnabled(this)
     }
 
     private fun setAuthFieldsEnabled(enabled: Boolean) {
@@ -252,6 +257,21 @@ class MainActivity : AppCompatActivity() {
                 startService(intent)
             }
         }
+
+        binding.switchDetectionEnabled.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setDetectionEnabled(this, isChecked)
+            restartServer()
+        }
+
+        binding.switchMotionDetection.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setMotionDetectionEnabled(this, isChecked)
+            restartServer()
+        }
+
+        binding.switchObjectDetection.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setObjectDetectionEnabled(this, isChecked)
+            restartServer()
+        }
     }
 
     private fun updateServerStatus(isRunning: Boolean) {
@@ -298,6 +318,9 @@ class MainActivity : AppCompatActivity() {
             putExtra("timestamp_size", binding.spinnerOverlaySize.text.toString())
             putExtra("flashlight_enabled", binding.switchFlashlight.isChecked)
             putExtra("night_mode_enabled", binding.switchNightMode.isChecked)
+            putExtra("detection_enabled", binding.switchDetectionEnabled.isChecked)
+            putExtra("motion_detection_enabled", binding.switchMotionDetection.isChecked)
+            putExtra("object_detection_enabled", binding.switchObjectDetection.isChecked)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
