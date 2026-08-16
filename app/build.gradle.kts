@@ -43,8 +43,11 @@ android {
         applicationId = "com.zektopic.cctvapp"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // CI overrides these (-PversionCode from the run number, -PversionName from the
+        // tag). Android refuses to install a build whose versionCode has not increased,
+        // so a pinned versionCode made every published release un-updatable.
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("versionName") as String?) ?: "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

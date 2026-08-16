@@ -693,7 +693,6 @@ class WebServer(
                     <select id="codecSelect" onchange="changeCodec(this.value)">
                         <option value="H264">H.264</option>
                         <option value="H265">H.265</option>
-                        <option value="VP9">VP9</option>
                         <option value="AV1">AV1</option>
                     </select>
                 </div>

@@ -32,6 +32,7 @@ import androidx.core.app.NotificationCompat
 import com.pedro.common.ConnectChecker
 import com.pedro.common.VideoCodec
 import com.pedro.encoder.input.gl.render.filters.`object`.TextObjectFilterRender
+import com.pedro.encoder.utils.CodecUtil
 import com.pedro.library.view.OpenGlView
 import com.pedro.rtspserver.RtspServerCamera2
 import java.io.ByteArrayOutputStream
@@ -738,15 +739,24 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 val selectedCodec = when (videoCodec) {
                     "H265" -> VideoCodec.H265
                     "AV1" -> VideoCodec.AV1
-                    "VP9" -> {
-                         android.util.Log.w("CctvServerService", "VP9 codec constant missing, falling back to H264")
-                         VideoCodec.H264
-                    }
+                    // "VP9" was offered in both UIs but silently fell back to H.264.
+                    // It is gone from the pickers; this branch only catches stale prefs.
                     else -> VideoCodec.H264
                 }
                 
                 rtspServerCamera.setVideoCodec(selectedCodec)
                 android.util.Log.d("CctvServerService", "Selected codec: $selectedCodec ($videoCodec)")
+
+                // The "Force Software Codec" switch was previously persisted and even
+                // restarted the stream, but was never applied to the encoder. Wire it to
+                // the API that actually selects the codec implementation.
+                val codecType = if (forceSoftware) {
+                    CodecUtil.CodecType.SOFTWARE
+                } else {
+                    CodecUtil.CodecType.FIRST_COMPATIBLE_FOUND
+                }
+                rtspServerCamera.forceCodecType(codecType, codecType)
+                android.util.Log.d("CctvServerService", "Codec type: $codecType")
 
                 // Set authentication
                 if (authEnabled && authUsername.isNotEmpty() && authPassword.isNotEmpty()) {
@@ -857,7 +867,15 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private fun getMaxCameraResolution(): Pair<Int, Int> {
         try {
             val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            val cameraId = cameraManager.cameraIdList.firstOrNull() ?: return Pair(1920, 1080)
+
+            // Prefer the back camera rather than whichever id happens to be first --
+            // on many devices id 0 is not the sensor actually being streamed, so the
+            // "Max" resolution could be resolved from the wrong camera entirely.
+            val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+                cameraManager.getCameraCharacteristics(id)
+                    .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+            } ?: cameraManager.cameraIdList.firstOrNull() ?: return Pair(1920, 1080)
+
             val characteristics = cameraManager.getCameraCharacteristics(cameraId)
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             // Use SurfaceTexture sizes — these are video-encoder compatible

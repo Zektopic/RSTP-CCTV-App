@@ -25,17 +25,52 @@ object WebAuth {
         val encoded = trimmed.substring(6).trim()
         if (encoded.isEmpty()) return null
 
-        val decoded = try {
-            String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_8)
-        } catch (_: IllegalArgumentException) {
-            return null
-        }
+        val decoded = decodeBase64(encoded)?.toString(Charsets.UTF_8) ?: return null
 
         // Only the FIRST colon separates the fields; passwords may contain colons.
         val separator = decoded.indexOf(':')
         if (separator < 0) return null
         return Pair(decoded.substring(0, separator), decoded.substring(separator + 1))
     }
+
+    /**
+     * Decodes standard Base64, returning null for anything invalid.
+     *
+     * Hand-rolled rather than using `java.util.Base64` (API 26, above this app's minSdk
+     * of 24 -- it would crash on Android 7) or `android.util.Base64` (a non-functional
+     * stub under JVM unit tests, and this is security code that must stay testable).
+     */
+    fun decodeBase64(input: String): ByteArray? {
+        val cleaned = input.filterNot { it == '\n' || it == '\r' }
+        if (cleaned.isEmpty() || cleaned.length % 4 != 0) return null
+
+        val output = java.io.ByteArrayOutputStream(cleaned.length / 4 * 3)
+        var buffer = 0
+        var bitsCollected = 0
+
+        for ((index, character) in cleaned.withIndex()) {
+            if (character == '=') {
+                // Padding is only legal in the final quantum.
+                if (index < cleaned.length - 2) return null
+                continue
+            }
+
+            val value = BASE64_ALPHABET.indexOf(character)
+            if (value < 0) return null
+
+            buffer = (buffer shl 6) or value
+            bitsCollected += 6
+            if (bitsCollected >= 8) {
+                bitsCollected -= 8
+                output.write((buffer shr bitsCollected) and 0xFF)
+            }
+        }
+
+        return output.toByteArray()
+    }
+
+    private const val BASE64_ALPHABET =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
     /**
      * Compares two strings in time independent of how many leading characters match,

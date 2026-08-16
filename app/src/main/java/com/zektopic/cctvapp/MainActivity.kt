@@ -45,7 +45,7 @@ class MainActivity : AppCompatActivity() {
     private val permissionRequestCode = 100
 
     private val resolutions = arrayOf("640x480", "1280x720", "1920x1080", "Max")
-    private val codecs = arrayOf("H264", "H265", "VP9", "AV1")
+    private val codecs = arrayOf("H264", "H265", "AV1")
     private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
     private val overlaySizes = arrayOf("Small", "Medium", "Large")
     private var isSidebarCollapsed = false

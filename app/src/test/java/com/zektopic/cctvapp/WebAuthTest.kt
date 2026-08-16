@@ -54,6 +54,48 @@ class WebAuthTest {
         assertNull(WebAuth.parseBasicHeader("Basic " + Base64.getEncoder().encodeToString("nocolon".toByteArray())))
     }
 
+    // --- decodeBase64 ---
+    // Hand-rolled because java.util.Base64 needs API 26 and this app supports API 24,
+    // so it is checked against the JDK implementation rather than trusted.
+
+    @Test
+    fun `decodes the same bytes as the jdk implementation`() {
+        val samples = listOf(
+            "", "f", "fo", "foo", "foo:", "admin:hunter2",
+            "user:p@ss:w0rd", "ünïcødé:päss", "a".repeat(100) + ":" + "b".repeat(37)
+        )
+        for (sample in samples) {
+            val encoded = Base64.getEncoder().encodeToString(sample.toByteArray())
+            val decoded = WebAuth.decodeBase64(encoded)
+            if (sample.isEmpty()) continue // empty input is rejected by design
+            assertEquals(sample, decoded?.toString(Charsets.UTF_8))
+        }
+    }
+
+    @Test
+    fun `decodes every padding length`() {
+        // 0, 1 and 2 padding characters respectively.
+        assertEquals("abc", WebAuth.decodeBase64("YWJj")?.toString(Charsets.UTF_8))
+        assertEquals("ab", WebAuth.decodeBase64("YWI=")?.toString(Charsets.UTF_8))
+        assertEquals("a", WebAuth.decodeBase64("YQ==")?.toString(Charsets.UTF_8))
+    }
+
+    @Test
+    fun `decodes bytes across the full range`() {
+        val bytes = ByteArray(256) { it.toByte() }
+        val encoded = Base64.getEncoder().encodeToString(bytes)
+        org.junit.Assert.assertArrayEquals(bytes, WebAuth.decodeBase64(encoded))
+    }
+
+    @Test
+    fun `rejects invalid base64`() {
+        assertNull(WebAuth.decodeBase64(""))
+        assertNull(WebAuth.decodeBase64("YWJ"))        // not a multiple of four
+        assertNull(WebAuth.decodeBase64("YW J="))      // stray space
+        assertNull(WebAuth.decodeBase64("YW*J"))       // character outside the alphabet
+        assertNull(WebAuth.decodeBase64("Y=Wj"))       // padding in the middle
+    }
+
     // --- constantTimeEquals ---
 
     @Test
