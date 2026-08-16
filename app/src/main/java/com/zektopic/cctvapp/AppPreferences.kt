@@ -16,7 +16,6 @@ object AppPreferences {
     private const val KEY_VIDEO_HEIGHT = "video_height"
     private const val KEY_FORCE_SOFTWARE = "force_software"
     private const val KEY_SHOW_PREVIEW = "show_preview"
-    private const val KEY_USE_BACK_CAMERA = "use_back_camera"
 
     private fun prefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -58,14 +57,6 @@ object AppPreferences {
 
     fun setShowPreview(context: Context, show: Boolean) {
         prefs(context).edit().putBoolean(KEY_SHOW_PREVIEW, show).apply()
-    }
-
-    // --- Camera Selection ---
-    fun getUseBackCamera(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_USE_BACK_CAMERA, true)
-
-    fun setUseBackCamera(context: Context, useBack: Boolean) {
-        prefs(context).edit().putBoolean(KEY_USE_BACK_CAMERA, useBack).apply()
     }
 
     // --- RTSP Authentication ---
@@ -171,5 +162,106 @@ object AppPreferences {
 
     fun setObjectDetectionEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_OBJECT_DETECTION_ENABLED, enabled).apply()
+    }
+
+    // --- Detection tuning ---
+    private const val KEY_MOTION_SENSITIVITY = "motion_sensitivity"
+    private const val KEY_DETECTION_COOLDOWN_SECONDS = "detection_cooldown_seconds"
+
+    const val DEFAULT_MOTION_SENSITIVITY = 5
+    const val DEFAULT_DETECTION_COOLDOWN_SECONDS = 10
+
+    /** 1 (least sensitive) .. 10 (most sensitive). */
+    fun getMotionSensitivity(context: Context): Int =
+        prefs(context).getInt(KEY_MOTION_SENSITIVITY, DEFAULT_MOTION_SENSITIVITY).coerceIn(1, 10)
+
+    fun setMotionSensitivity(context: Context, sensitivity: Int) {
+        prefs(context).edit().putInt(KEY_MOTION_SENSITIVITY, sensitivity.coerceIn(1, 10)).apply()
+    }
+
+    /** Minimum gap between two events of the same type, in seconds. */
+    fun getDetectionCooldownSeconds(context: Context): Int =
+        prefs(context).getInt(KEY_DETECTION_COOLDOWN_SECONDS, DEFAULT_DETECTION_COOLDOWN_SECONDS)
+            .coerceIn(1, 600)
+
+    fun setDetectionCooldownSeconds(context: Context, seconds: Int) {
+        prefs(context).edit()
+            .putInt(KEY_DETECTION_COOLDOWN_SECONDS, seconds.coerceIn(1, 600))
+            .apply()
+    }
+
+    // --- Web dashboard security ---
+    private const val KEY_WEB_AUTH_ENABLED = "web_auth_enabled"
+    private const val KEY_CREDENTIALS_SEEDED = "credentials_seeded"
+
+    /**
+     * Whether the dashboard on port 8080 requires HTTP Basic auth.
+     *
+     * Defaults to true: the dashboard exposes the live camera and every setting, so
+     * "open to the whole LAN" is not a safe default. Users who want the old behaviour
+     * can turn it off in the app or from the dashboard itself.
+     */
+    fun getWebAuthEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_WEB_AUTH_ENABLED, true)
+
+    fun setWebAuthEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_WEB_AUTH_ENABLED, enabled).apply()
+    }
+
+    /**
+     * Seeds a username and a strong generated password the first time the app runs with
+     * dashboard auth enabled, and returns the generated password so the caller can show
+     * it. Returns null if credentials already exist -- without this, enabling auth by
+     * default would lock users out of their own camera with no way back in.
+     */
+    fun seedCredentialsIfMissing(context: Context): String? {
+        val preferences = prefs(context)
+        if (preferences.getBoolean(KEY_CREDENTIALS_SEEDED, false)) return null
+        if (getUsername(context).isNotEmpty() && getPassword(context).isNotEmpty()) {
+            preferences.edit().putBoolean(KEY_CREDENTIALS_SEEDED, true).apply()
+            return null
+        }
+
+        val password = WebAuth.generatePassword(16)
+        preferences.edit()
+            .putString(KEY_AUTH_USERNAME, "admin")
+            .putString(KEY_AUTH_PASSWORD, password)
+            .putBoolean(KEY_CREDENTIALS_SEEDED, true)
+            .apply()
+        return password
+    }
+
+    // --- Audio ---
+    private const val KEY_AUDIO_ENABLED = "audio_enabled"
+
+    /**
+     * Off by default. Enabling it makes the service claim the microphone
+     * foreground-service type and require the RECORD_AUDIO grant.
+     */
+    fun getAudioEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUDIO_ENABLED, false)
+
+    fun setAudioEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUDIO_ENABLED, enabled).apply()
+    }
+
+    // --- Startup behaviour ---
+    private const val KEY_START_ON_BOOT = "start_on_boot"
+    private const val KEY_AUTO_START_ON_LAUNCH = "auto_start_on_launch"
+
+    /** Off by default: a camera server should not silently start itself after a reboot. */
+    fun getStartOnBoot(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_START_ON_BOOT, false)
+
+    fun setStartOnBoot(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_START_ON_BOOT, enabled).apply()
+    }
+
+    /** Off by default: opening the app should not immediately begin streaming. */
+    fun getAutoStartOnLaunch(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTO_START_ON_LAUNCH, false)
+
+    fun setAutoStartOnLaunch(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTO_START_ON_LAUNCH, enabled).apply()
     }
 }

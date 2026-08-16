@@ -10,7 +10,14 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- Required whenever audio capture is enabled: Android 14+ throws SecurityException
+         if a foreground service uses the microphone without declaring this type. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- API 33+: without this the foreground-service notification is suppressed. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="true" />
 
 
     <application
@@ -37,7 +44,8 @@
             android:exported="false" />
 
         <service android:name=".CctvServerService"
-            android:foregroundServiceType="camera" />
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone" />
 
         <receiver android:name=".BootReceiver"
             android:exported="true">

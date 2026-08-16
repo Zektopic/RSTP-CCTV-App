@@ -13,3 +13,10 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Signing material -- NEVER commit these.
+# The release keystore lives outside the repository and reaches CI via the
+# RELEASE_KEYSTORE_BASE64 secret. See README "Building a signed release".
+*.jks
+*.keystore
+keystore.properties

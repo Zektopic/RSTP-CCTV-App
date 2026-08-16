@@ -2,16 +2,17 @@ package com.zektopic.cctvapp
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.zektopic.cctvapp.databinding.ActivityEventsBinding
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class EventsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityEventsBinding
     private lateinit var eventStore: EventStore
+    private lateinit var adapter: EventsAdapter
     private var isSidebarCollapsed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -19,7 +20,15 @@ class EventsActivity : AppCompatActivity() {
         binding = ActivityEventsBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        eventStore = EventStore(this)
+        eventStore = EventStore.forContext(this)
+
+        adapter = EventsAdapter(
+            snapshotFileProvider = { id -> eventStore.getEventSnapshotFile(id) },
+            onEventClick = { event -> showEventDetail(event) }
+        )
+        binding.listEvents.layoutManager = LinearLayoutManager(this)
+        binding.listEvents.adapter = adapter
+
         setupListeners()
         refreshEventsList()
     }
@@ -29,10 +38,13 @@ class EventsActivity : AppCompatActivity() {
         refreshEventsList()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        adapter.shutdown()
+    }
+
     private fun setupListeners() {
-        binding.btnRefreshEvents.setOnClickListener {
-            refreshEventsList()
-        }
+        binding.btnRefreshEvents.setOnClickListener { refreshEventsList() }
 
         binding.btnToggleSidebar.setOnClickListener {
             isSidebarCollapsed = !isSidebarCollapsed
@@ -44,9 +56,7 @@ class EventsActivity : AppCompatActivity() {
             finish()
         }
 
-        binding.btnNavEvents.setOnClickListener {
-            refreshEventsList()
-        }
+        binding.btnNavEvents.setOnClickListener { refreshEventsList() }
     }
 
     private fun applySidebarState() {
@@ -66,19 +76,27 @@ class EventsActivity : AppCompatActivity() {
     }
 
     private fun refreshEventsList() {
-        val events = eventStore.listRecentEvents(50)
-        if (events.isEmpty()) {
-            binding.textEventsLog.text = getString(R.string.no_events_yet)
-            return
+        val events = eventStore.listRecentEvents(200)
+        adapter.submitList(events)
+
+        binding.textEventsCount.text = getString(R.string.events_count, events.size)
+        binding.textEventsEmpty.visibility = if (events.isEmpty()) View.VISIBLE else View.GONE
+        binding.listEvents.visibility = if (events.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun showEventDetail(event: DetectionEvent) {
+        val snapshot = eventStore.getEventSnapshotFile(event.id)
+        val imageView = android.widget.ImageView(this).apply {
+            adjustViewBounds = true
+            if (snapshot != null) {
+                setImageBitmap(android.graphics.BitmapFactory.decodeFile(snapshot.absolutePath))
+            }
         }
 
-        val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-        val lines = events.map { event ->
-            val timestamp = formatter.format(Date(event.startTimeMs))
-            val score = event.score?.let { String.format(Locale.US, "%.2f", it) } ?: "-"
-            val shortId = if (event.id.length > 8) event.id.substring(0, 8) else event.id
-            "[$timestamp] ${event.type} score=$score snapshot=${if (event.snapshotFileName != null) "yes" else "no"} clip=${if (event.clipFileName != null) "yes" else "no"} id=$shortId"
-        }
-        binding.textEventsLog.text = lines.joinToString("\n")
+        AlertDialog.Builder(this)
+            .setTitle(event.type.replaceFirstChar { it.uppercase() })
+            .setView(imageView)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 }

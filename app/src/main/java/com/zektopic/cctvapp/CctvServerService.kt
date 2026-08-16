@@ -47,6 +47,17 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     companion object {
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "CctvServerChannel"
+        const val ACTION_STOP_SERVER = "ACTION_STOP_SERVER"
+
+        /** Capture cadence while detection is on or the dashboard is open. */
+        private const val ACTIVE_SNAPSHOT_INTERVAL_MS = 500L
+        /** Heartbeat while nothing needs frames -- just enough to notice a new viewer. */
+        private const val IDLE_SNAPSHOT_INTERVAL_MS = 3000L
+        /** How long after the last /shot.jpg we keep treating a viewer as present. */
+        private const val VIEWER_IDLE_TIMEOUT_MS = 10_000L
+
+        /** COCO labels treated as an "animal" event. */
+        private val ANIMAL_LABELS = setOf("cat", "dog", "bird", "horse", "sheep", "cow")
     }
 
     private lateinit var rtspServerCamera: RtspServerCamera2
@@ -54,24 +65,43 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var webServer: WebServer
     private lateinit var windowManager: WindowManager
     private var isSurfaceCreated = false
-    private var videoWidth = 640
-    private var videoHeight = 480
-    private var videoCodec = "H264"
-    private var forceSoftware = false
-    private var showPreview = false
-    private var authEnabled = false
-    private var authUsername = ""
-    private var authPassword = ""
-    private var showTimestamp = false
-    private var showDate = false
-    private var timestampPosition = "Top Left"
-    private var timestampSize = "Medium"
-    private var flashlightEnabled = false
-    private var nightModeEnabled = false
-    private var detectionEnabled = false
-    private var motionDetectionEnabled = true
-    private var objectDetectionEnabled = true
+
+    // These are read and written from both the main thread and NanoHTTPD worker
+    // threads, so every one of them has to be @Volatile.
+    @Volatile private var videoWidth = 640
+    @Volatile private var videoHeight = 480
+    @Volatile private var videoCodec = "H264"
+    @Volatile private var forceSoftware = false
+    @Volatile private var showPreview = false
+    @Volatile private var authEnabled = false
+    @Volatile private var authUsername = ""
+    @Volatile private var authPassword = ""
+    @Volatile private var webAuthEnabled = true
+    @Volatile private var audioEnabled = false
+    @Volatile private var showTimestamp = false
+    @Volatile private var showDate = false
+    @Volatile private var timestampPosition = "Top Left"
+    @Volatile private var timestampSize = "Medium"
+    @Volatile private var flashlightEnabled = false
+    @Volatile private var nightModeEnabled = false
+    @Volatile private var detectionEnabled = false
+    @Volatile private var motionDetectionEnabled = true
+    @Volatile private var objectDetectionEnabled = true
     private var isLanternOn = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * Runs [block] on the main thread.
+     *
+     * Every WebServer callback arrives on a NanoHTTPD worker thread, but touching the
+     * camera or the overlay view off the main thread throws (`updateViewLayout` raises
+     * CalledFromWrongThreadException). Only the *side effects* are posted -- the state
+     * fields themselves are assigned synchronously by the caller, so a request that
+     * changes a setting still reflects the new value by the time it responds.
+     */
+    private fun onMain(block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) block() else mainHandler.post(block)
+    }
     private var sensorManager: SensorManager? = null
     private var lightSensor: Sensor? = null
     private var textFilter: TextObjectFilterRender? = null
@@ -100,12 +130,26 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var liteRtObjectDetector: LiteRtObjectDetector
     private val lastEventMsByType = mutableMapOf<String, Long>()
     private val snapshotHandler = Handler(Looper.getMainLooper())
+
+    /** When a dashboard client last asked for /shot.jpg, for idle throttling. */
+    @Volatile private var lastSnapshotRequestMs = 0L
+
     private val snapshotRunnable = object : Runnable {
         override fun run() {
-            if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming && isSurfaceCreated) {
-                 takeSnapshot()
-            }
-            snapshotHandler.postDelayed(this, 500) // 2 FPS to be safe
+            val streaming = ::rtspServerCamera.isInitialized &&
+                rtspServerCamera.isStreaming && isSurfaceCreated
+
+            // Capturing + JPEG-encoding twice a second around the clock is the single
+            // biggest battery cost in the app, and most of the time nothing consumes the
+            // result. Only run at full rate when detection needs frames or somebody is
+            // watching the dashboard; otherwise idle at a slow heartbeat.
+            val viewerActive =
+                System.currentTimeMillis() - lastSnapshotRequestMs < VIEWER_IDLE_TIMEOUT_MS
+            val wanted = streaming && (detectionEnabled || viewerActive)
+
+            if (wanted) takeSnapshot()
+
+            snapshotHandler.postDelayed(this, if (wanted) ACTIVE_SNAPSHOT_INTERVAL_MS else IDLE_SNAPSHOT_INTERVAL_MS)
         }
     }
 
@@ -116,7 +160,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        eventStore = EventStore(this)
+        eventStore = EventStore.forContext(this)
         eventStore.cleanupExpired()
 
         // Load saved settings as defaults
@@ -137,6 +181,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         detectionEnabled = AppPreferences.getDetectionEnabled(this)
         motionDetectionEnabled = AppPreferences.getMotionDetectionEnabled(this)
         objectDetectionEnabled = AppPreferences.getObjectDetectionEnabled(this)
+        webAuthEnabled = AppPreferences.getWebAuthEnabled(this)
+        audioEnabled = AppPreferences.getAudioEnabled(this)
+        motionDetector.updateSensitivity(AppPreferences.getMotionSensitivity(this))
         liteRtObjectDetector = LiteRtObjectDetector(this)
 
         // Setup light sensor for night mode
@@ -170,25 +217,40 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.holder.addCallback(this)
         openGlView.holder.setFixedSize(640, 480)
 
-        webServer = WebServer(this, getIpAddress(), 
-            imageProvider = { currentSnapshot.get() },
+        webServer = WebServer(this, getIpAddress(),
+            imageProvider = {
+                // Record the demand so the capture loop keeps running while somebody is
+                // actually watching, and kick it immediately -- otherwise the first frame
+                // after an idle period comes back as "Camera not ready".
+                lastSnapshotRequestMs = System.currentTimeMillis()
+                if (currentSnapshot.get() == null) {
+                    onMain { takeSnapshot() }
+                }
+                currentSnapshot.get()
+            },
             onSwitchCamera = {
-                if (::rtspServerCamera.isInitialized) {
-                    try {
-                        rtspServerCamera.switchCamera()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+                onMain {
+                    if (::rtspServerCamera.isInitialized) {
+                        try {
+                            rtspServerCamera.switchCamera()
+                        } catch (e: Exception) {
+                            android.util.Log.e("CctvServerService", "switchCamera failed", e)
+                        }
                     }
                 }
             },
             onStartStream = {
-                if (isSurfaceCreated && (!::rtspServerCamera.isInitialized || !rtspServerCamera.isStreaming)) {
-                    startStream()
+                onMain {
+                    if (isSurfaceCreated && (!::rtspServerCamera.isInitialized || !rtspServerCamera.isStreaming)) {
+                        startStream()
+                    }
                 }
             },
             onStopStream = {
-                if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
-                    rtspServerCamera.stopStream()
+                onMain {
+                    if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+                        rtspServerCamera.stopStream()
+                    }
                 }
             },
             isStreaming = {
@@ -198,10 +260,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 if (videoCodec != newCodec) {
                     videoCodec = newCodec
                     AppPreferences.setVideoCodec(this, newCodec)
-                    if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
-                        rtspServerCamera.stopStream()
-                        startStream()
-                    }
+                    onMain { restartStreamIfRunning() }
                 }
             },
             getCurrentCodec = { videoCodec },
@@ -210,10 +269,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     videoWidth = w
                     videoHeight = h
                     AppPreferences.setResolution(this, w, h)
-                    if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
-                        rtspServerCamera.stopStream()
-                        startStream()
-                    }
+                    onMain { restartStreamIfRunning() }
                 }
             },
             getCurrentResolution = { 
@@ -222,50 +278,60 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             getAuthEnabled = { authEnabled },
             getUsername = { authUsername },
             getPassword = { authPassword },
+            // Each branch assigns and persists synchronously on the calling thread, then
+            // posts only the camera/view work. That ordering matters: the dashboard polls
+            // /status immediately after a change, and an async assignment would make the
+            // toggle snap back to its old value.
             onSettingUpdate = { key, value ->
                 when (key) {
                     "show_timestamp" -> {
                         showTimestamp = value.toBoolean()
                         AppPreferences.setShowTimestamp(this, showTimestamp)
-                        applyTimestampOverlay()
+                        onMain { applyTimestampOverlay() }
                     }
                     "show_date" -> {
                         showDate = value.toBoolean()
                         AppPreferences.setShowDate(this, showDate)
-                        applyTimestampOverlay()
+                        onMain { applyTimestampOverlay() }
                     }
                     "timestamp_position" -> {
                         timestampPosition = value
                         AppPreferences.setTimestampPosition(this, timestampPosition)
-                        applyTimestampOverlay()
+                        onMain { applyTimestampOverlay() }
                     }
                     "timestamp_size" -> {
                         timestampSize = value
                         AppPreferences.setTimestampSize(this, timestampSize)
-                        applyTimestampOverlay()
+                        onMain { applyTimestampOverlay() }
                     }
                     "flashlight_enabled" -> {
                         flashlightEnabled = value.toBoolean()
                         AppPreferences.setFlashlightEnabled(this, flashlightEnabled)
-                        applyFlashlight()
+                        onMain { applyFlashlight() }
                     }
                     "night_mode_enabled" -> {
                         nightModeEnabled = value.toBoolean()
                         AppPreferences.setNightModeEnabled(this, nightModeEnabled)
-                        updateNightModeSensor()
+                        onMain { updateNightModeSensor() }
                     }
                     "force_software" -> {
                         forceSoftware = value.toBoolean()
                         AppPreferences.setForceSoftware(this, forceSoftware)
-                        if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
-                            rtspServerCamera.stopStream()
-                            startStream()
-                        }
+                        onMain { restartStreamIfRunning() }
                     }
                     "show_preview" -> {
                         showPreview = value.toBoolean()
                         AppPreferences.setShowPreview(this, showPreview)
-                        updateOverlaySize()
+                        onMain { updateOverlaySize() }
+                    }
+                    "audio_enabled" -> {
+                        audioEnabled = value.toBoolean()
+                        AppPreferences.setAudioEnabled(this, audioEnabled)
+                        onMain { restartStreamIfRunning() }
+                    }
+                    "web_auth_enabled" -> {
+                        webAuthEnabled = value.toBoolean()
+                        AppPreferences.setWebAuthEnabled(this, webAuthEnabled)
                     }
                     "detection_enabled" -> {
                         detectionEnabled = value.toBoolean()
@@ -278,6 +344,17 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     "object_detection_enabled" -> {
                         objectDetectionEnabled = value.toBoolean()
                         AppPreferences.setObjectDetectionEnabled(this, objectDetectionEnabled)
+                    }
+                    "motion_sensitivity" -> {
+                        value.toIntOrNull()?.let { sensitivity ->
+                            AppPreferences.setMotionSensitivity(this, sensitivity)
+                            motionDetector.updateSensitivity(sensitivity)
+                        }
+                    }
+                    "detection_cooldown_seconds" -> {
+                        value.toIntOrNull()?.let { seconds ->
+                            AppPreferences.setDetectionCooldownSeconds(this, seconds)
+                        }
                     }
                 }
             },
@@ -300,11 +377,13 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 AppPreferences.setAuthEnabled(this, enabled)
                 AppPreferences.setUsername(this, username)
                 AppPreferences.setPassword(this, password)
-                if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
-                    if (enabled && username.isNotEmpty() && password.isNotEmpty()) {
-                        rtspServerCamera.getStreamClient().setAuthorization(username, password)
-                    } else {
-                        rtspServerCamera.getStreamClient().setAuthorization("", "")
+                onMain {
+                    if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+                        if (enabled && username.isNotEmpty() && password.isNotEmpty()) {
+                            rtspServerCamera.getStreamClient().setAuthorization(username, password)
+                        } else {
+                            rtspServerCamera.getStreamClient().setAuthorization("", "")
+                        }
                     }
                 }
             },
@@ -317,33 +396,58 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 event.toJsonObject().toString()
             },
             getBatteryLevel = { getBatteryLevel() },
-            getWifiStrength = { getWifiStrength() }
+            getWifiStrength = { getWifiStrength() },
+            getWebAuthEnabled = { webAuthEnabled }
         )
         webServer.start()
         snapshotHandler.post(snapshotRunnable)
         retentionHandler.post(retentionRunnable)
     }
 
-    private fun getBatteryLevel(): Int {
-        val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { ifilter ->
-            registerReceiver(null, ifilter)
-        }
-        val level: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-        val scale: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-        return if (level != -1 && scale != -1) {
-            (level * 100 / scale.toFloat()).toInt()
-        } else {
-            -1
+    /** Restarts an in-flight stream so a changed encoder setting takes effect. Main thread only. */
+    private fun restartStreamIfRunning() {
+        if (::rtspServerCamera.isInitialized && rtspServerCamera.isStreaming) {
+            rtspServerCamera.stopStream()
+            startStream()
         }
     }
 
+    private fun hasPermission(permission: String): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(this, permission) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Battery percentage, or -1 if unavailable.
+     *
+     * Uses BatteryManager directly rather than a sticky-broadcast registration: /status
+     * is polled every few seconds by every connected dashboard, and registering a
+     * receiver per request is needless work.
+     */
+    private fun getBatteryLevel(): Int {
+        val batteryManager = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager ?: return -1
+        val capacity = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        return if (capacity in 0..100) capacity else -1
+    }
+
+    /**
+     * Wi-Fi signal as a percentage, or -1 when it cannot be determined.
+     *
+     * `WifiManager.connectionInfo` is deprecated and, on modern Android, returns a
+     * placeholder RSSI to apps without location permission. Reporting -1 (rendered as
+     * a dash) is honest; reporting a number derived from -127 is not.
+     */
+    @Suppress("DEPRECATION")
     private fun getWifiStrength(): Int {
-        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-        val wifiInfo = wifiManager?.connectionInfo
-        val rssi = wifiInfo?.rssi ?: return -1
-        // Avoid calculation if rssi is an error value (-127 or similar depending on OS)
-        if (rssi < -100) return 0
-        return WifiManager.calculateSignalLevel(rssi, 100)
+        return try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                ?: return -1
+            val rssi = wifiManager.connectionInfo?.rssi ?: return -1
+            if (rssi == Int.MIN_VALUE || rssi <= -127) return -1
+            WifiManager.calculateSignalLevel(rssi, 100).coerceIn(0, 100)
+        } catch (e: Exception) {
+            android.util.Log.w("CctvServerService", "Wi-Fi strength unavailable", e)
+            -1
+        }
     }
 
     private fun getIpAddress(): String {
@@ -375,8 +479,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         if (!detectionEnabled || (!motionDetectionEnabled && !objectDetectionEnabled)) return
 
         detectionExecutor.execute {
+            var bitmap: Bitmap? = null
             try {
-                val bitmap = BitmapFactory.decodeByteArray(snapshotJpeg, 0, snapshotJpeg.size) ?: return@execute
+                bitmap = BitmapFactory.decodeByteArray(snapshotJpeg, 0, snapshotJpeg.size)
+                    ?: return@execute
 
                 if (motionDetectionEnabled) {
                     val motion = motionDetector.isMotionDetected(bitmap)
@@ -387,21 +493,22 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
                 if (objectDetectionEnabled) {
                     val detections = liteRtObjectDetector.detect(bitmap)
-                    val person = detections.maxByOrNull { if (it.label == "person") it.score else -1f }
-                    if (person != null && person.label == "person") {
-                        maybeCreateDetectionEvent("person", person.score.toDouble(), snapshotJpeg)
+
+                    detections.filter { it.label == "person" }.maxByOrNull { it.score }?.let {
+                        maybeCreateDetectionEvent("person", it.score.toDouble(), snapshotJpeg)
                     }
 
-                    val animalDetections = detections.filter {
-                        it.label in setOf("cat", "dog", "bird", "horse", "sheep", "cow")
-                    }
-                    val bestAnimal = animalDetections.maxByOrNull { it.score }
-                    if (bestAnimal != null) {
-                        maybeCreateDetectionEvent("animal", bestAnimal.score.toDouble(), snapshotJpeg)
-                    }
+                    detections
+                        .filter { it.label in ANIMAL_LABELS }
+                        .maxByOrNull { it.score }
+                        ?.let { maybeCreateDetectionEvent("animal", it.score.toDouble(), snapshotJpeg) }
                 }
             } catch (e: Exception) {
                 android.util.Log.e("CctvServerService", "Detection pipeline failed", e)
+            } finally {
+                // Decoded once per frame at up to 2 FPS -- without this the GC churn is
+                // significant and shows up as dropped frames on low-end devices.
+                bitmap?.recycle()
             }
         }
     }
@@ -409,7 +516,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     private fun maybeCreateDetectionEvent(type: String, score: Double, snapshotJpeg: ByteArray) {
         val now = System.currentTimeMillis()
         val lastAt = lastEventMsByType[type] ?: 0L
-        val cooldownMs = 10_000L
+        val cooldownMs = AppPreferences.getDetectionCooldownSeconds(this) * 1000L
         if (now - lastAt < cooldownMs) return
 
         lastEventMsByType[type] = now
@@ -417,6 +524,21 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP_SERVER) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (intent?.action == "ACTION_SET_SETTING") {
+            val key = intent.getStringExtra("setting_key")
+            val value = intent.getStringExtra("setting_value")
+            if (key == "web_auth_enabled" && value != null) {
+                webAuthEnabled = value.toBoolean()
+                AppPreferences.setWebAuthEnabled(this, webAuthEnabled)
+            }
+            return START_STICKY
+        }
+
         if (intent?.action == "ACTION_SWITCH_CAMERA") {
             if (::rtspServerCamera.isInitialized) {
                 try {
@@ -466,16 +588,22 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         val newDetectionEnabled = intent?.getBooleanExtra("detection_enabled", AppPreferences.getDetectionEnabled(this)) ?: false
         val newMotionDetectionEnabled = intent?.getBooleanExtra("motion_detection_enabled", AppPreferences.getMotionDetectionEnabled(this)) ?: true
         val newObjectDetectionEnabled = intent?.getBooleanExtra("object_detection_enabled", AppPreferences.getObjectDetectionEnabled(this)) ?: true
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("CCTV Server")
-            .setContentText("Server is running.")
-            .build()
+        audioEnabled = intent?.getBooleanExtra("audio_enabled", AppPreferences.getAudioEnabled(this))
+            ?: AppPreferences.getAudioEnabled(this)
+        AppPreferences.setAudioEnabled(this, audioEnabled)
+        motionDetector.updateSensitivity(AppPreferences.getMotionSensitivity(this))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
+            // The declared type must cover every restricted resource the service touches.
+            // Recording audio under a camera-only type throws SecurityException on
+            // Android 14+, which is why the microphone bit is added whenever audio is on.
+            var serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            if (audioEnabled) {
+                serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+            startForeground(NOTIFICATION_ID, buildNotification(), serviceType)
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            startForeground(NOTIFICATION_ID, buildNotification())
         }
 
         // Initialize wrapper if needed
@@ -598,7 +726,13 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     else -> 2000 * 1024
                 }
 
-                rtspServerCamera.prepareAudio(64 * 1024, 44100, true, false, false)
+                // Audio is opt-in. Recording it forces the microphone foreground-service
+                // type and the RECORD_AUDIO grant; a camera-only stream needs neither.
+                if (audioEnabled && hasPermission(android.Manifest.permission.RECORD_AUDIO)) {
+                    rtspServerCamera.prepareAudio(64 * 1024, 44100, true, false, false)
+                } else {
+                    rtspServerCamera.disableAudio()
+                }
 
                 // Check and set Codec
                 val selectedCodec = when (videoCodec) {
@@ -849,6 +983,37 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
              layoutParams.height = 1
         }
         windowManager.updateViewLayout(openGlView, layoutParams)
+    }
+
+    /**
+     * The foreground-service notification. A small icon is mandatory -- without one the
+     * notification renders blank or is dropped outright, which for a camera that is
+     * recording is both a usability and a transparency problem.
+     */
+    private fun buildNotification(): android.app.Notification {
+        val contentIntent = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        val stopIntent = android.app.PendingIntent.getService(
+            this,
+            1,
+            Intent(this, CctvServerService::class.java).setAction(ACTION_STOP_SERVER),
+            android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_cctv)
+            .setContentTitle(getString(R.string.notification_title))
+            .setContentText(getString(R.string.notification_text))
+            .setContentIntent(contentIntent)
+            .addAction(0, getString(R.string.notification_stop), stopIntent)
+            .setOngoing(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
     }
 
     private fun createNotificationChannel() {

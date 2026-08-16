@@ -17,8 +17,17 @@ class LiteRtObjectDetector(
 ) {
     private var detector: ObjectDetector? = null
 
+    /**
+     * Set once loading has failed, so a missing or broken model costs one failed attempt
+     * instead of an exception on every captured frame (this runs at up to 2 FPS).
+     */
+    @Volatile
+    private var initializationFailed = false
+
     fun ensureInitialized(): Boolean {
         if (detector != null) return true
+        if (initializationFailed) return false
+
         return try {
             val options = ObjectDetector.ObjectDetectorOptions.builder()
                 .setMaxResults(5)
@@ -27,9 +36,21 @@ class LiteRtObjectDetector(
             detector = ObjectDetector.createFromFileAndOptions(context, modelAssetName, options)
             true
         } catch (e: Exception) {
-            Log.w("LiteRtObjectDetector", "Could not initialize LiteRT model '$modelAssetName'. Place a COCO model in app/src/main/assets.", e)
+            initializationFailed = true
+            Log.w(
+                "LiteRtObjectDetector",
+                "Could not initialize LiteRT model '$modelAssetName'. " +
+                    "Place a COCO model in app/src/main/assets. Object detection is disabled " +
+                    "until the app restarts.",
+                e
+            )
             false
         }
+    }
+
+    /** Clears the failure latch so a newly added model can be picked up without a reinstall. */
+    fun retryInitialization() {
+        initializationFailed = false
     }
 
     fun detect(bitmap: Bitmap): List<LiteRtDetection> {

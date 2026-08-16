@@ -24,7 +24,24 @@ import java.net.Inet4Address
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private val permissions = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+
+    /**
+     * CAMERA is the only hard requirement. RECORD_AUDIO is requested alongside it so the
+     * optional audio toggle works without a second prompt, and POST_NOTIFICATIONS is
+     * needed from API 33 for the foreground-service notification to appear at all.
+     */
+    private val permissions: Array<String>
+        get() = buildList {
+            add(Manifest.permission.CAMERA)
+            add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }.toTypedArray()
+
+    /** Only these block the server from running. */
+    private val requiredPermissions = arrayOf(Manifest.permission.CAMERA)
+
     private val permissionRequestCode = 100
 
     private val resolutions = arrayOf("640x480", "1280x720", "1920x1080", "Max")
@@ -41,6 +58,7 @@ class MainActivity : AppCompatActivity() {
         setupViews()
         requestPermissionsIfNeeded()
         updateNetworkInfo()
+        showGeneratedPasswordIfAny()
         autoStartServerIfNeeded()
     }
 
@@ -115,6 +133,15 @@ class MainActivity : AppCompatActivity() {
         binding.switchDetectionEnabled.isChecked = AppPreferences.getDetectionEnabled(this)
         binding.switchMotionDetection.isChecked = AppPreferences.getMotionDetectionEnabled(this)
         binding.switchObjectDetection.isChecked = AppPreferences.getObjectDetectionEnabled(this)
+        binding.sliderMotionSensitivity.value = AppPreferences.getMotionSensitivity(this).toFloat()
+        binding.sliderDetectionCooldown.value =
+            AppPreferences.getDetectionCooldownSeconds(this).toFloat().coerceIn(5f, 120f)
+
+        // Load security & startup settings
+        binding.switchWebAuth.isChecked = AppPreferences.getWebAuthEnabled(this)
+        binding.switchAudio.isChecked = AppPreferences.getAudioEnabled(this)
+        binding.switchStartOnBoot.isChecked = AppPreferences.getStartOnBoot(this)
+        binding.switchAutoStart.isChecked = AppPreferences.getAutoStartOnLaunch(this)
     }
 
     private fun setAuthFieldsEnabled(enabled: Boolean) {
@@ -125,15 +152,21 @@ class MainActivity : AppCompatActivity() {
         binding.btnGeneratePassword.isEnabled = enabled
     }
 
-    private fun setupListeners() {
-        binding.switchServer.setOnCheckedChangeListener { _, isChecked ->
+    // startServer() decides the resulting state itself, because it can refuse (missing
+    // overlay or camera permission). The listener must not assert `true` afterwards or
+    // it overwrites that refusal and leaves the switch on with no service behind it.
+    private val serverSwitchListener =
+        android.widget.CompoundButton.OnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
                 startServer()
             } else {
                 stopService(Intent(this, CctvServerService::class.java))
+                updateServerStatus(false)
             }
-            updateServerStatus(isChecked)
         }
+
+    private fun setupListeners() {
+        binding.switchServer.setOnCheckedChangeListener(serverSwitchListener)
 
         binding.btnSwitchCamera.setOnClickListener {
             if (binding.switchServer.isChecked) {
@@ -158,13 +191,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         (binding.spinnerResolution as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
-            val selected = resolutions[position]
-            if (selected == "Max") {
-                AppPreferences.setResolution(this, 0, 0)
-            } else {
-                val parts = selected.split("x")
-                AppPreferences.setResolution(this, parts[0].toInt(), parts[1].toInt())
-            }
+            val (width, height) = parseResolution(resolutions[position])
+            AppPreferences.setResolution(this, width, height)
             restartServer()
         }
 
@@ -181,28 +209,20 @@ class MainActivity : AppCompatActivity() {
             restartServer()
         }
 
+        // Persist credentials on focus loss, but only restart the stream when they
+        // actually changed -- tabbing through the fields used to tear the stream down
+        // and bring it back up each time.
         binding.editUsername.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                AppPreferences.setUsername(this, binding.editUsername.text.toString())
-                updateNetworkInfo()
-                restartServer()
-            }
+            if (!hasFocus) applyCredentialsIfChanged()
         }
 
         binding.editPassword.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                AppPreferences.setPassword(this, binding.editPassword.text.toString())
-                updateNetworkInfo()
-                restartServer()
-            }
+            if (!hasFocus) applyCredentialsIfChanged()
         }
 
         binding.btnGeneratePassword.setOnClickListener {
-            val password = generateRandomPassword(10)
-            binding.editPassword.setText(password)
-            AppPreferences.setPassword(this, password)
-            updateNetworkInfo()
-            restartServer()
+            binding.editPassword.setText(WebAuth.generatePassword(16))
+            applyCredentialsIfChanged()
             Toast.makeText(this, R.string.password_generated, Toast.LENGTH_SHORT).show()
         }
 
@@ -274,6 +294,33 @@ class MainActivity : AppCompatActivity() {
             restartServer()
         }
 
+        binding.sliderMotionSensitivity.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) AppPreferences.setMotionSensitivity(this, value.toInt())
+        }
+
+        binding.sliderDetectionCooldown.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) AppPreferences.setDetectionCooldownSeconds(this, value.toInt())
+        }
+
+        binding.switchWebAuth.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setWebAuthEnabled(this, isChecked)
+            if (isChecked) showGeneratedPasswordIfAny()
+            sendSettingToService("web_auth_enabled", isChecked.toString())
+        }
+
+        binding.switchAudio.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setAudioEnabled(this, isChecked)
+            restartServer()
+        }
+
+        binding.switchStartOnBoot.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setStartOnBoot(this, isChecked)
+        }
+
+        binding.switchAutoStart.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setAutoStartOnLaunch(this, isChecked)
+        }
+
         binding.btnToggleSidebar.setOnClickListener {
             isSidebarCollapsed = !isSidebarCollapsed
             applySidebarState()
@@ -304,8 +351,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Reflects the real service state in the UI.
+     *
+     * The listener is detached first: assigning `isChecked` fires the change listener,
+     * which starts the service -- so simply *displaying* the current state used to
+     * start the server, including during initial setup.
+     */
     private fun updateServerStatus(isRunning: Boolean) {
+        binding.switchServer.setOnCheckedChangeListener(null)
         binding.switchServer.isChecked = isRunning
+        binding.switchServer.setOnCheckedChangeListener(serverSwitchListener)
+
         binding.statusDot.setBackgroundResource(
             if (isRunning) R.drawable.status_dot_green else R.drawable.status_dot_red
         )
@@ -318,15 +375,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startServer() {
+        if (!allPermissionsGranted()) {
+            requestPermissionsIfNeeded()
+            updateServerStatus(false)
+            Toast.makeText(this, R.string.camera_permission_toast, Toast.LENGTH_LONG).show()
+            return
+        }
+
         if (!Settings.canDrawOverlays(this)) {
-            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-            startActivityForResult(intent, 0)
-            binding.switchServer.isChecked = false
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
             updateServerStatus(false)
             Toast.makeText(this, R.string.overlay_permission_toast, Toast.LENGTH_LONG).show()
             return
         }
+
         restartServer()
+        updateServerStatus(true)
     }
 
     private fun restartServer() {
@@ -360,6 +428,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Pushes a single setting to a running service without restarting the stream. */
+    private fun sendSettingToService(key: String, value: String) {
+        if (!binding.switchServer.isChecked) return
+        val intent = Intent(this, CctvServerService::class.java).apply {
+            action = "ACTION_SET_SETTING"
+            putExtra("setting_key", key)
+            putExtra("setting_value", value)
+        }
+        startService(intent)
+    }
+
     private fun sendServiceAction(action: String) {
         Intent(this, CctvServerService::class.java).also { intent ->
             intent.action = action
@@ -367,13 +446,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun getSelectedResolution(): Pair<Int, Int> {
-        val selected = binding.spinnerResolution.text.toString()
-        if (selected == "Max") {
-            return Pair(0, 0)  // Sentinel: CctvServerService will detect max
+    private fun getSelectedResolution(): Pair<Int, Int> =
+        parseResolution(binding.spinnerResolution.text.toString())
+
+    companion object {
+        /** Sentinel meaning "ask the camera for its maximum"; resolved in the service. */
+        val MAX_RESOLUTION = Pair(0, 0)
+        private val DEFAULT_RESOLUTION = Pair(640, 480)
+
+        /**
+         * Parses a "WIDTHxHEIGHT" label, or "Max".
+         *
+         * The picker is an AutoCompleteTextView, so its contents are whatever the user
+         * typed -- `parts[0].toInt()` on that threw NumberFormatException and took the
+         * app down. Anything unparseable now falls back to the default resolution.
+         */
+        fun parseResolution(value: String): Pair<Int, Int> {
+            val trimmed = value.trim()
+            if (trimmed.equals("Max", ignoreCase = true)) return MAX_RESOLUTION
+
+            val parts = trimmed.split("x", "X")
+            if (parts.size != 2) return DEFAULT_RESOLUTION
+
+            val width = parts[0].trim().toIntOrNull() ?: return DEFAULT_RESOLUTION
+            val height = parts[1].trim().toIntOrNull() ?: return DEFAULT_RESOLUTION
+            if (width <= 0 || height <= 0) return DEFAULT_RESOLUTION
+
+            return Pair(width, height)
         }
-        val parts = selected.split("x")
-        return Pair(parts[0].toInt(), parts[1].toInt())
     }
 
     private fun updateNetworkInfo() {
@@ -402,9 +502,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun generateRandomPassword(length: Int): String {
-        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        return (1..length).map { chars.random() }.joinToString("")
+    /** Saves the credential fields, refreshing the URLs and the stream only if they changed. */
+    private fun applyCredentialsIfChanged() {
+        val username = binding.editUsername.text.toString()
+        val password = binding.editPassword.text.toString()
+
+        val changed = username != AppPreferences.getUsername(this) ||
+            password != AppPreferences.getPassword(this)
+        if (!changed) return
+
+        AppPreferences.setUsername(this, username)
+        AppPreferences.setPassword(this, password)
+        updateNetworkInfo()
+        restartServer()
+    }
+
+    /**
+     * Shows the password generated on first run so the user is not locked out of the
+     * now-authenticated dashboard.
+     */
+    private fun showGeneratedPasswordIfAny() {
+        val generated = AppPreferences.seedCredentialsIfMissing(this) ?: return
+
+        binding.editUsername.setText(AppPreferences.getUsername(this))
+        binding.editPassword.setText(generated)
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(R.string.generated_password_title)
+            .setMessage(getString(R.string.generated_password_message, generated))
+            .setPositiveButton(R.string.generated_password_ok, null)
+            .show()
     }
 
     private fun requestPermissionsIfNeeded() {
@@ -413,14 +540,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun allPermissionsGranted() = permissions.all {
+    private fun allPermissionsGranted() = requiredPermissions.all {
         ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
 
+    /**
+     * Starts the server on launch only when the user has explicitly asked for it.
+     *
+     * This used to fire unconditionally, so merely opening the app switched the camera
+     * on and published a stream to the network without any confirmation.
+     */
     private fun autoStartServerIfNeeded() {
-        if (!binding.switchServer.isChecked && allPermissionsGranted() && Settings.canDrawOverlays(this)) {
-            binding.switchServer.isChecked = true
-        }
+        if (!AppPreferences.getAutoStartOnLaunch(this)) return
+        if (binding.switchServer.isChecked) return
+        if (!allPermissionsGranted() || !Settings.canDrawOverlays(this)) return
+        binding.switchServer.isChecked = true
     }
 
     private fun isServiceRunning(serviceClass: Class<*>): Boolean {
