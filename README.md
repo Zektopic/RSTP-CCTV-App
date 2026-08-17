@@ -15,7 +15,7 @@ no subscription.
 [![Min SDK](https://img.shields.io/badge/minSdk-24-blue)](https://developer.android.com/about/versions/nougat)
 [![Target SDK](https://img.shields.io/badge/targetSdk-36-blue)](https://developer.android.com/about/versions/16)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![License](https://img.shields.io/badge/license-not%20yet%20declared-lightgrey)](#license)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 </div>
 
@@ -453,16 +453,12 @@ Issues and pull requests are welcome.
 
 ## License
 
-> [!NOTE]
-> **No licence has been declared for this project yet.** The intent is open source, but
-> without a `LICENSE` file the default position under copyright law is that no rights to
-> use, modify or redistribute are granted — which is stricter than intended, and blocks
-> packagers such as F-Droid.
->
-> Adding one is a decision for the repository owner. MIT or Apache-2.0 are the
-> conventional choices for a project like this; Apache-2.0 additionally grants patent
-> rights. GPL-3.0 would keep forks open, but note that the bundled dependencies are
-> Apache-2.0 licensed.
+Released under the [MIT License](LICENSE) — you may use, modify and redistribute this
+software, including commercially, provided the copyright notice and licence text are
+retained.
+
+The bundled dependencies listed below are Apache-2.0 licensed and remain under their own
+terms.
 
 ### Built with
 
