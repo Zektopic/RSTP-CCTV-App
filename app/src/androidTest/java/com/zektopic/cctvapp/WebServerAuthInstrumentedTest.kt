@@ -32,7 +32,10 @@ class WebServerAuthInstrumentedTest {
     private val username = "admin"
     private val password = "test-password"
 
-    /** A port of its own, so the test never collides with a running CctvServerService. */
+    /**
+     * The OS-assigned port this instance actually bound, so the test never collides with a
+     * CctvServerService already holding [WebServer.PORT].
+     */
     private val port get() = server.listeningPort
 
     @Before
@@ -78,7 +81,8 @@ class WebServerAuthInstrumentedTest {
             onCreateTestEvent = { eventStore.createTestEvent(null).toJsonObject().toString() },
             getBatteryLevel = { 50 },
             getWifiStrength = { 80 },
-            getWebAuthEnabled = { authEnabled }
+            getWebAuthEnabled = { authEnabled },
+            port = WebServer.EPHEMERAL_PORT
         )
         server.start()
     }

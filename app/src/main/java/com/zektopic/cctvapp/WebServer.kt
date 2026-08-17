@@ -44,11 +44,20 @@ class WebServer(
     private val onCreateTestEvent: () -> String,
     private val getBatteryLevel: () -> Int,
     private val getWifiStrength: () -> Int,
-    private val getWebAuthEnabled: () -> Boolean
-) : NanoHTTPD(PORT) {
+    private val getWebAuthEnabled: () -> Boolean,
+    /**
+     * Port to bind. Defaults to [PORT]; tests pass [EPHEMERAL_PORT] so they get a free
+     * port from the OS instead of colliding with a [CctvServerService] already on 8080.
+     * Read the real port back from `listeningPort` after [start].
+     */
+    port: Int = PORT
+) : NanoHTTPD(port) {
 
     companion object {
         const val PORT = 8080
+
+        /** Bind whatever port the OS hands out. Only used by tests. */
+        const val EPHEMERAL_PORT = 0
         private const val REALM = "CCTV Dashboard"
     }
 

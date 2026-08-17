@@ -45,6 +45,11 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
 
+      # Compiles src/androidTest. Without this the instrumented tests can drift out of
+      # sync with the code they test and nothing notices until someone runs them on a device.
+      - name: Compile instrumented tests
+        run: ./gradlew assembleDebugAndroidTest --stacktrace
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
