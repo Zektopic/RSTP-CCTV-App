@@ -2,6 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+      ML Kit's GenAI image description declares minSdk 26; this app supports 24.
+      Rather than drop Android 7 users for an optional, pre-release captioning feature,
+      the merge is overridden and every call site is gated on API 26 as well as on
+      AICore actually being present. Below 26 the feature simply reports unavailable,
+      which is the same path taken on the many devices that have no AICore at all.
+    -->
+    <uses-sdk tools:overrideLibrary="com.google.mlkit.genai.imagedescription,com.google.mlkit.genai.common" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -10,7 +19,14 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- Required whenever audio capture is enabled: Android 14+ throws SecurityException
+         if a foreground service uses the microphone without declaring this type. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- API 33+: without this the foreground-service notification is suppressed. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="true" />
 
 
     <application
@@ -37,7 +53,8 @@
             android:exported="false" />
 
         <service android:name=".CctvServerService"
-            android:foregroundServiceType="camera" />
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone" />
 
         <receiver android:name=".BootReceiver"
             android:exported="true">

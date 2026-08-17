@@ -6,16 +6,32 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
+/**
+ * On-disk store for detection events and their snapshots.
+ *
+ * Takes a plain directory rather than a Context so it can be exercised by JVM unit
+ * tests; [forContext] is the production entry point.
+ */
 class EventStore(
-    context: Context,
-    private val retentionMs: Long = DEFAULT_RETENTION_MS
+    rootDir: File,
+    private val retentionMs: Long = DEFAULT_RETENTION_MS,
+    private val maxEvents: Int = DEFAULT_MAX_EVENTS
 ) {
     companion object {
         const val DEFAULT_RETENTION_MS: Long = 72L * 60L * 60L * 1000L
+
+        /**
+         * Hard ceiling on retained events. Time-based retention alone is not enough --
+         * a camera pointed at a busy street can generate thousands of events well
+         * inside the retention window and fill the device.
+         */
+        const val DEFAULT_MAX_EVENTS: Int = 2000
+
+        fun forContext(context: Context): EventStore = EventStore(context.filesDir)
     }
 
     private val lock = Any()
-    private val eventsDir = File(context.filesDir, "events")
+    private val eventsDir = File(rootDir, "events")
     private val metadataFile = File(eventsDir, "events.json")
     private val mediaDir = File(eventsDir, "media")
 
@@ -125,15 +141,10 @@ class EventStore(
             }
 
             for (event in remove) {
-                if (event.snapshotFileName != null) {
-                    File(mediaDir, event.snapshotFileName).delete()
-                }
-                if (event.clipFileName != null) {
-                    File(mediaDir, event.clipFileName).delete()
-                }
+                deleteMediaFor(event)
             }
 
-            writeEventsInternal(keep)
+            writeEventsInternal(enforceMaxEvents(keep))
             return remove.size
         }
     }
@@ -142,12 +153,50 @@ class EventStore(
         return listEvents(null, limit.coerceIn(1, 500))
     }
 
+    /**
+     * Attaches a caption to an already-stored event.
+     *
+     * Captions arrive seconds after the event itself, because on-device description is
+     * far slower than detection and must not hold up storing the event. Returns false if
+     * the event has since been evicted by retention, which is not an error.
+     */
+    fun setCaption(id: String, caption: String): Boolean {
+        synchronized(lock) {
+            val events = readEventsInternal()
+            val index = events.indexOfFirst { it.id == id }
+            if (index < 0) return false
+            events[index] = events[index].copy(caption = caption)
+            writeEventsInternal(events)
+            return true
+        }
+    }
+
     private fun addEvent(event: DetectionEvent) {
         synchronized(lock) {
             val events = readEventsInternal()
             events.add(event)
-            writeEventsInternal(events)
+            writeEventsInternal(enforceMaxEvents(events))
         }
+    }
+
+    /**
+     * Drops the oldest events, and their media, once the store exceeds [maxEvents].
+     * Caller must hold [lock].
+     */
+    private fun enforceMaxEvents(events: MutableList<DetectionEvent>): List<DetectionEvent> {
+        if (events.size <= maxEvents) return events
+
+        val sorted = events.sortedByDescending { it.startTimeMs }
+        val keep = sorted.take(maxEvents)
+        for (event in sorted.drop(maxEvents)) {
+            deleteMediaFor(event)
+        }
+        return keep
+    }
+
+    private fun deleteMediaFor(event: DetectionEvent) {
+        event.snapshotFileName?.let { File(mediaDir, it).delete() }
+        event.clipFileName?.let { File(mediaDir, it).delete() }
     }
 
     private fun listEvents(sinceMs: Long?, limit: Int): List<DetectionEvent> {
@@ -192,11 +241,30 @@ class EventStore(
         return result
     }
 
+    /**
+     * Writes the index atomically: a temp file that is then renamed over the real one.
+     *
+     * Writing in place meant a process kill partway through -- which for a foreground
+     * camera service is routine -- left truncated JSON and lost every stored event.
+     */
     private fun writeEventsInternal(events: List<DetectionEvent>) {
         val arr = JSONArray()
         for (event in events) {
             arr.put(event.toJsonObject())
         }
-        metadataFile.writeText(arr.toString())
+
+        val tempFile = File(eventsDir, "events.json.tmp")
+        try {
+            tempFile.writeText(arr.toString())
+            if (!tempFile.renameTo(metadataFile)) {
+                // Some filesystems refuse a rename onto an existing file.
+                metadataFile.delete()
+                if (!tempFile.renameTo(metadataFile)) {
+                    metadataFile.writeText(arr.toString())
+                }
+            }
+        } finally {
+            if (tempFile.exists()) tempFile.delete()
+        }
     }
 }

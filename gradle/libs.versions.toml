@@ -7,6 +7,21 @@ espressoCore = "3.5.1"
 appcompat = "1.6.1"
 material = "1.10.0"
 constraintlayout = "2.1.4"
+recyclerview = "1.3.2"
+# rtspServer pins rootEncoder transitively -- bump both together.
+# 1.4.2 / 2.8.0 require compileSdk 37, which AGP 9.0.1 does not support.
+rootEncoder = "2.7.2"
+rtspServer = "1.4.1"
+nanohttpd = "2.3.1"
+# tensorflow-lite-task-vision was frozen at 0.4.4 (Jul 2023) and its
+# libtask_vision_jni.so has 4 KB LOAD alignment, which fails Android 16 KB
+# page-size checks. MediaPipe Tasks is its maintained successor and ships
+# 16 KB-aligned natives.
+mediapipeTasksVision = "1.0.0"
+# Gemini Nano via AICore. Pre-release, and absent on most hardware -- every
+# call site must degrade silently when it is unavailable.
+mlkitGenaiImageDescription = "1.0.0-beta1"
+json = "20250517"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -16,6 +31,13 @@ androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-co
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
+androidx-recyclerview = { group = "androidx.recyclerview", name = "recyclerview", version.ref = "recyclerview" }
+rootencoder-library = { group = "com.github.pedroSG94.RootEncoder", name = "library", version.ref = "rootEncoder" }
+rtsp-server = { group = "com.github.pedroSG94", name = "RTSP-Server", version.ref = "rtspServer" }
+nanohttpd = { group = "org.nanohttpd", name = "nanohttpd", version.ref = "nanohttpd" }
+json = { group = "org.json", name = "json", version.ref = "json" }
+mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeTasksVision" }
+mlkit-genai-image-description = { group = "com.google.mlkit", name = "genai-image-description", version.ref = "mlkitGenaiImageDescription" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

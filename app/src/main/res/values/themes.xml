@@ -13,6 +13,11 @@
         <item name="android:colorBackground">@color/surface_light</item>
         <item name="colorSurface">@color/card_light</item>
         <item name="colorOnSurface">@color/on_surface_light</item>
+        <!-- Tonal buttons and chips read the *container* roles. Left undefined they fall
+             back to the Material 3 baseline purple, which is what made "Switch Camera"
+             mauve on an otherwise teal screen. -->
+        <item name="colorSecondaryContainer">@color/teal_200</item>
+        <item name="colorOnSecondaryContainer">@color/teal_800</item>
         <!-- Status bar color. -->
         <item name="android:statusBarColor">@color/teal_800</item>
         <item name="android:navigationBarColor">@color/surface_light</item>

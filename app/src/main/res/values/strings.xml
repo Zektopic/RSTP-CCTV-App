@@ -10,6 +10,7 @@
     <string name="device_ip_address">Device IP Address:</string>
     <string name="stream_url_guide">You can view the stream at rtsp://[YOUR_IP]:8554/stream</string>
     <string name="overlay_permission_toast">Please grant \'Display over other apps\' permission</string>
+    <string name="camera_permission_toast">Camera permission is required to start the server</string>
     <string name="ip_not_available">Not available</string>
 
     <!-- New UI strings -->
@@ -48,12 +49,47 @@
     <string name="section_detection">Detection</string>
     <string name="detection_enabled">Enable Detection</string>
     <string name="motion_detection_enabled">Motion Detection</string>
-    <string name="object_detection_enabled">People/Animal Detection (LiteRT)</string>
+    <string name="object_detection_enabled">People/Animal Detection</string>
     <string name="section_events">Saved Events</string>
     <string name="refresh_events">Refresh</string>
     <string name="no_events_yet">No events yet. Enable detection and wait for motion/person/animal triggers.</string>
     <string name="nav_settings">Settings</string>
     <string name="nav_events">Events</string>
-    <string name="sidebar_collapse_symbol">«</string>
-    <string name="sidebar_expand_symbol">»</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_name">CCTV Server</string>
+    <string name="notification_title">CCTV Server running</string>
+    <string name="notification_text">Camera is streaming on this device</string>
+    <string name="notification_stop">Stop server</string>
+    <string name="boot_resume_title">CCTV Server did not start</string>
+    <string name="boot_resume_text">Android blocked the camera service from starting after reboot. Tap to start it.</string>
+
+    <!-- Security -->
+    <string name="section_security">Security</string>
+    <string name="web_auth_enabled">Secure Web Dashboard</string>
+    <string name="web_auth_summary">Require the username and password below for the dashboard on port 8080</string>
+    <string name="generated_password_title">Dashboard password generated</string>
+    <string name="generated_password_message">Your web dashboard is protected.\n\nUsername: admin\nPassword: %1$s\n\nSave this now — it is also shown in the Authentication section.</string>
+    <!-- Shown when credentials exist but the dashboard is deliberately left open, so the
+         dialog never claims protection that is not actually in force. -->
+    <string name="generated_password_message_unprotected">A dashboard password has been created, but \"Secure web dashboard\" is currently OFF, so anyone on your network can still reach it.\n\nUsername: admin\nPassword: %1$s\n\nTurn the setting on under Security to require it.</string>
+    <string name="generated_password_ok">Got it</string>
+
+    <!-- Startup -->
+    <string name="section_startup">Startup</string>
+    <string name="start_on_boot">Start on boot</string>
+    <string name="start_on_boot_summary">Android may still block this for camera services</string>
+    <string name="auto_start_on_launch">Start when app opens</string>
+
+    <!-- Audio -->
+    <string name="audio_enabled">Stream microphone audio</string>
+    <string name="audio_enabled_summary">Off by default; requires the microphone permission</string>
+
+    <!-- Detection tuning -->
+    <string name="motion_sensitivity">Motion sensitivity</string>
+    <string name="detection_cooldown">Event cooldown (seconds)</string>
+
+    <!-- Events list -->
+    <string name="event_snapshot_description">Detection snapshot</string>
+    <string name="events_count">%1$d events</string>
 </resources>

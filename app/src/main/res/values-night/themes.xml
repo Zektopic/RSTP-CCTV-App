@@ -13,6 +13,9 @@
         <item name="android:colorBackground">@color/surface_dark</item>
         <item name="colorSurface">@color/card_dark</item>
         <item name="colorOnSurface">@color/on_surface_dark</item>
+        <!-- See the note in values/themes.xml. -->
+        <item name="colorSecondaryContainer">@color/teal_700</item>
+        <item name="colorOnSecondaryContainer">@color/teal_200</item>
         <!-- Status bar color. -->
         <item name="android:statusBarColor">@color/surface_dark</item>
         <item name="android:navigationBarColor">@color/surface_dark</item>

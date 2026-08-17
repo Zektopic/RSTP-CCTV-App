@@ -4,48 +4,28 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical"
     tools:context=".MainActivity">
 
-    <LinearLayout
-        android:id="@+id/sidebar_container"
-        android:layout_width="88dp"
-        android:layout_height="match_parent"
-        android:background="?attr/colorSurfaceContainerLow"
-        android:gravity="top|center_horizontal"
-        android:orientation="vertical"
-        android:paddingTop="24dp"
-        android:paddingHorizontal="8dp">
+    <!-- Replaces an 88dp always-on sidebar. On a phone that ate a fifth of the
+         width, sat under the status bar, and wrapped "Settings" onto three lines. -->
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fitsSystemWindows="false">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_toggle_sidebar"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:minHeight="0dp"
-            android:paddingVertical="4dp"
-            android:text="@string/sidebar_collapse_symbol" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_nav_settings"
-            style="@style/Widget.Material3.Button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/nav_settings" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_nav_events"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/nav_events" />
-    </LinearLayout>
+            android:layout_height="?attr/actionBarSize"
+            app:menu="@menu/menu_main"
+            app:title="@string/cctv_server_title" />
+    </com.google.android.material.appbar.AppBarLayout>
 
     <ScrollView
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
         android:layout_weight="1"
         android:fillViewport="true">
 
@@ -54,19 +34,8 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:paddingHorizontal="16dp"
-        android:paddingTop="32dp"
+        android:paddingTop="16dp"
         android:paddingBottom="24dp">
-
-        <!-- App Title -->
-        <TextView
-            android:id="@+id/title_cctv_server"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:text="@string/cctv_server_title"
-            android:textAppearance="@style/TextAppearance.Material3.HeadlineLarge"
-            android:textColor="?attr/colorPrimary"
-            android:textStyle="bold" />
 
         <!-- ═══════════════════════════════════════ -->
         <!-- Server Control Card                     -->
@@ -106,7 +75,7 @@
                         android:layout_marginEnd="10dp"
                         android:background="@drawable/status_dot_red" />
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
+                    <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/switch_server"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
@@ -123,11 +92,11 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:text="@string/switch_camera"
-                    app:icon="@android:drawable/ic_menu_camera"
+                    app:icon="@drawable/ic_camera_switch"
                     app:iconGravity="textStart" />
 
                 <!-- Show Preview -->
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switch_preview"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -196,7 +165,7 @@
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <!-- Force Software Codec -->
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switch_force_software"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -231,14 +200,14 @@
                     android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
                     android:textColor="?attr/colorPrimary" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switch_detection_enabled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/detection_enabled"
                     android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switch_motion_detection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -246,12 +215,122 @@
                     android:text="@string/motion_detection_enabled"
                     android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switch_object_detection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="@string/object_detection_enabled"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+                <TextView
+                    android:id="@+id/label_motion_sensitivity"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/motion_sensitivity"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/slider_motion_sensitivity"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:stepSize="1"
+                    android:value="5"
+                    android:valueFrom="1"
+                    android:valueTo="10" />
+
+                <TextView
+                    android:id="@+id/label_detection_cooldown"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/detection_cooldown"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/slider_detection_cooldown"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:stepSize="5"
+                    android:value="10"
+                    android:valueFrom="5"
+                    android:valueTo="120" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ═══════════════════════════════════════ -->
+        <!-- Security / Startup Card                -->
+        <!-- ═══════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:contentPadding="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/section_security"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                    android:textColor="?attr/colorPrimary" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_web_auth"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/web_auth_enabled"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/web_auth_summary"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_audio"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/audio_enabled"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/audio_enabled_summary"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_start_on_boot"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/start_on_boot"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/start_on_boot_summary"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_auto_start"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/auto_start_on_launch"
                     android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
             </LinearLayout>
@@ -282,7 +361,7 @@
                     android:textColor="?attr/colorPrimary" />
 
                 <!-- Enable Authentication Toggle -->
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switch_auth"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -371,7 +450,7 @@
                     android:textColor="?attr/colorPrimary" />
 
                 <!-- Show Timestamp Toggle -->
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switch_timestamp"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -379,7 +458,7 @@
                     android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
                 <!-- Show Date Toggle -->
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switch_date"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -449,7 +528,7 @@
                     android:textColor="?attr/colorPrimary" />
 
                 <!-- Flashlight Toggle -->
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switch_flashlight"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -457,7 +536,7 @@
                     android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
                 <!-- Night Mode Toggle -->
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switch_night_mode"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -540,7 +619,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:contentDescription="@string/copy_url"
-                        app:icon="@android:drawable/ic_menu_share" />
+                        app:icon="@drawable/ic_content_copy" />
                 </LinearLayout>
 
                 <!-- Web Dashboard URL -->
@@ -566,7 +645,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:contentDescription="@string/copy_url"
-                        app:icon="@android:drawable/ic_menu_share" />
+                        app:icon="@drawable/ic_content_copy" />
                 </LinearLayout>
 
                 <!-- Guide text -->

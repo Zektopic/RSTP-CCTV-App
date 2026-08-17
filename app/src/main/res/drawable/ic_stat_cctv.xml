@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Status-bar icon for the foreground-service notification.
+
+    Notification icons are drawn as a mask: only the alpha channel is used and the
+    system tints it. It must therefore be a solid white-on-transparent silhouette,
+    which is why this cannot reuse the coloured launcher foreground.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <!-- Camera body -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4,6h11c1.1,0 2,0.9 2,2v8c0,1.1 -0.9,2 -2,2H4c-1.1,0 -2,-0.9 -2,-2V8c0,-1.1 0.9,-2 2,-2z" />
+
+    <!-- Lens aperture (punched out via the background colour of the mask) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M9.5,12m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
+
+    <!-- Lens barrel pointing right -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M19,10l3,-2v8l-3,-2z" />
+
+    <!-- Mount -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,18h3v2H8z" />
+</vector>

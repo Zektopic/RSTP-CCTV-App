@@ -17,6 +17,8 @@ class WebServer(
     private val isStreaming: () -> Boolean,
     private val onCodecUpdate: (String) -> Unit,
     private val getCurrentCodec: () -> String,
+    /** What the encoder actually negotiated; differs from the request after a fallback. */
+    private val getActiveCodec: () -> String,
     private val onResolutionUpdate: (Int, Int) -> Unit,
     private val getCurrentResolution: () -> String,
     private val getAuthEnabled: () -> Boolean,
@@ -43,20 +45,68 @@ class WebServer(
     private val getEventClipFile: (String) -> File?,
     private val onCreateTestEvent: () -> String,
     private val getBatteryLevel: () -> Int,
-    private val getWifiStrength: () -> Int
-) : NanoHTTPD(8080) {
+    private val getWifiStrength: () -> Int,
+    private val getWebAuthEnabled: () -> Boolean,
+    /**
+     * Port to bind. Defaults to [PORT]; tests pass [EPHEMERAL_PORT] so they get a free
+     * port from the OS instead of colliding with a [CctvServerService] already on 8080.
+     * Read the real port back from `listeningPort` after [start].
+     */
+    port: Int = PORT
+) : NanoHTTPD(port) {
+
+    companion object {
+        const val PORT = 8080
+
+        /** Bind whatever port the OS hands out. Only used by tests. */
+        const val EPHEMERAL_PORT = 0
+        private const val REALM = "CCTV Dashboard"
+    }
 
     override fun serve(session: IHTTPSession): Response {
-        try {
-            return processRequest(session)
+        return try {
+            val headers = session.headers ?: emptyMap()
+
+            // Reject cross-site requests before doing any work. Without this, a page on
+            // the internet can drive this server from inside the victim's LAN.
+            if (!WebAuth.isOriginAllowed(headers["origin"], headers["host"])) {
+                return newFixedLengthResponse(
+                    Response.Status.FORBIDDEN, MIME_PLAINTEXT, "Cross-origin request rejected"
+                )
+            }
+
+            if (!WebAuth.isAuthorized(
+                    getWebAuthEnabled(), getUsername(), getPassword(), headers["authorization"]
+                )
+            ) {
+                return unauthorized()
+            }
+
+            // Mutations should be POSTed. NanoHTTPD only populates `parameters` for a
+            // form-encoded body once the body has been parsed, so do that up front and
+            // GET/POST become interchangeable for every /action/* handler below.
+            if (session.method == Method.POST || session.method == Method.PUT) {
+                session.parseBody(HashMap())
+            }
+
+            processRequest(session)
         } catch (e: Exception) {
-            return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Internal Error")
+            android.util.Log.e("WebServer", "Request failed: ${session.uri}", e)
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Internal Error")
         }
+    }
+
+    private fun unauthorized(): Response {
+        val response = newFixedLengthResponse(
+            Response.Status.UNAUTHORIZED, MIME_PLAINTEXT, "Authentication required"
+        )
+        response.addHeader("WWW-Authenticate", "Basic realm=\"$REALM\", charset=\"UTF-8\"")
+        return response
     }
 
     private fun processRequest(session: IHTTPSession): Response {
         val uri = session.uri
-        
+
         if (uri == "/shot.jpg") {
             val imageBytes = imageProvider()
             return if (imageBytes != null) {
@@ -116,17 +166,15 @@ class WebServer(
 
         if (uri == "/action/create-test-event") {
             val json = onCreateTestEvent()
-            val response = newFixedLengthResponse(Response.Status.OK, "application/json", json)
-            response.addHeader("Access-Control-Allow-Origin", "*")
-            return response
+            return newFixedLengthResponse(Response.Status.OK, "application/json", json)
         }
 
         if (uri == "/events") {
             val since = session.parameters["since"]?.firstOrNull()?.toLongOrNull()
             val limit = session.parameters["limit"]?.firstOrNull()?.toIntOrNull() ?: 100
-            val response = newFixedLengthResponse(Response.Status.OK, "application/json", listEventsJson(since, limit))
-            response.addHeader("Access-Control-Allow-Origin", "*")
-            return response
+            return newFixedLengthResponse(
+                Response.Status.OK, "application/json", listEventsJson(since, limit)
+            )
         }
 
         if (uri.startsWith("/events/")) {
@@ -137,9 +185,7 @@ class WebServer(
                 if (parts.size == 2) {
                     val eventJson = getEventJson(eventId)
                     return if (eventJson != null) {
-                        val response = newFixedLengthResponse(Response.Status.OK, "application/json", eventJson)
-                        response.addHeader("Access-Control-Allow-Origin", "*")
-                        response
+                        newFixedLengthResponse(Response.Status.OK, "application/json", eventJson)
                     } else {
                         newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Event not found")
                     }
@@ -186,6 +232,7 @@ class WebServer(
             val json = """{
                 "streaming":$streaming,
                 "codec":"$codec",
+                "activeCodec":"${getActiveCodec()}",
                 "resolution":"$resolution",
                 "authEnabled":$authEnabled,
                 "username":"${escapeJson(username)}",
@@ -203,11 +250,10 @@ class WebServer(
                 "objectDetectionEnabled":${getObjectDetectionEnabled()},
                 "objectDetectorReady":${getObjectDetectorReady()},
                 "batteryLevel":${getBatteryLevel()},
-                "wifiStrength":${getWifiStrength()}
+                "wifiStrength":${getWifiStrength()},
+                "webAuthEnabled":${getWebAuthEnabled()}
             }""".trimIndent()
-            val response = newFixedLengthResponse(Response.Status.OK, "application/json", json)
-            response.addHeader("Access-Control-Allow-Origin", "*")
-            return response
+            return newFixedLengthResponse(Response.Status.OK, "application/json", json)
         }
 
         if (uri == "/" || uri == "/greet.html") {
@@ -243,7 +289,10 @@ class WebServer(
     }
 
     private fun buildDashboardHtml(): String {
-        val rtspUrl = buildRtspUrl()
+        // Everything interpolated below is escaped: the username and password are
+        // settable over the network and end up inside buildRtspUrl().
+        val rtspUrl = WebAuth.escapeHtml(buildRtspUrl())
+        val safeIp = WebAuth.escapeHtml(ipAddress)
         val authBadgeDisplay = if (getAuthEnabled() && getUsername().isNotEmpty()) "inline" else "none"
         return """
 <!DOCTYPE html>
@@ -251,7 +300,7 @@ class WebServer(
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>CCTV Dashboard — $ipAddress</title>
+    <title>CCTV Dashboard — $safeIp</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -656,7 +705,6 @@ class WebServer(
                     <select id="codecSelect" onchange="changeCodec(this.value)">
                         <option value="H264">H.264</option>
                         <option value="H265">H.265</option>
-                        <option value="VP9">VP9</option>
                         <option value="AV1">AV1</option>
                     </select>
                 </div>
@@ -755,7 +803,7 @@ class WebServer(
 
         <!-- Detection -->
         <div class="settings-card">
-            <h3>Detection (LiteRT + Motion)</h3>
+            <h3>Detection (Object + Motion)</h3>
             <div class="setting-row">
                 <div>
                     <span class="setting-label">Enable Detection</span>
@@ -776,7 +824,7 @@ class WebServer(
             <div class="setting-row">
                 <div>
                     <span class="setting-label">People/Animal Detection</span>
-                    <div class="setting-sublabel">Uses LiteRT TensorFlow model from assets/detect.tflite</div>
+                    <div class="setting-sublabel">Uses a TensorFlow Lite model from assets/detect.tflite</div>
                 </div>
                 <label class="toggle">
                     <input type="checkbox" id="toggleObjectDetection" onchange="setSetting('object_detection_enabled', this.checked)">
@@ -807,7 +855,17 @@ class WebServer(
             </div>
             <div class="setting-row">
                 <span class="setting-label">Password</span>
-                <input type="text" class="text-input" id="authPassword" placeholder="password" onchange="updateAuth()">
+                <input type="password" class="text-input" id="authPassword" placeholder="password" onchange="updateAuth()">
+            </div>
+            <div class="setting-row">
+                <div>
+                    <span class="setting-label">Secure This Dashboard</span>
+                    <div class="setting-sublabel">Require the username &amp; password above for port 8080 too</div>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleWebAuth" onchange="setSetting('web_auth_enabled', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
             </div>
         </div>
         
@@ -826,12 +884,12 @@ class WebServer(
             <div class="url-row">
                 <div>
                     <div class="url-label">Web Dashboard</div>
-                    <div class="url-value">http://$ipAddress:8080</div>
+                    <div class="url-value">http://$safeIp:8080</div>
                 </div>
             </div>
         </div>
         
-        <div class="footer">CCTV Server • $ipAddress</div>
+        <div class="footer">CCTV Server • $safeIp</div>
     </div>
     
     <div class="toast" id="toast"></div>
@@ -896,11 +954,12 @@ class WebServer(
                     document.getElementById('toggleObjectDetection').checked = data.objectDetectionEnabled;
                     const detectorStatusText = document.getElementById('detectorStatusText');
                     detectorStatusText.textContent = data.objectDetectorReady
-                        ? 'LiteRT model loaded'
+                        ? 'Detection model loaded'
                         : 'Model missing: add app/src/main/assets/detect.tflite';
                     
                     // Sync auth
                     document.getElementById('toggleAuth').checked = data.authEnabled;
+                    document.getElementById('toggleWebAuth').checked = data.webAuthEnabled;
                     if (initialLoad) {
                         document.getElementById('authUsername').value = data.username || '';
                         initialLoad = false;
@@ -921,30 +980,33 @@ class WebServer(
         setInterval(fetchStatus, 3000);
         
         // --- Actions ---
+        // State changes go out as POST; the server also accepts GET for
+        // backwards compatibility with existing scripts and NVR integrations.
+        const POST = { method: 'POST' };
         function toggleStream() {
-            fetch('/action/toggle-stream')
+            fetch('/action/toggle-stream', POST)
                 .then(r => r.text())
                 .then(t => { showToast(t === 'Started' ? 'Stream started' : 'Stream stopped'); fetchStatus(); });
         }
         
         function switchCamera() {
-            fetch('/action/switch-camera')
+            fetch('/action/switch-camera', POST)
                 .then(() => showToast('Camera switched'));
         }
         
         function changeCodec(v) {
-            fetch('/action/set-codec?codec=' + v)
+            fetch('/action/set-codec?codec=' + encodeURIComponent(v), POST)
                 .then(() => { showToast('Codec: ' + v); fetchStatus(); });
         }
         
         function changeResolution(v) {
             const [w, h] = v.split('x');
-            fetch('/action/set-resolution?w=' + w + '&h=' + h)
+            fetch('/action/set-resolution?w=' + w + '&h=' + h, POST)
                 .then(() => { showToast(v === '0x0' ? 'Resolution: Max' : 'Resolution: ' + v); fetchStatus(); });
         }
         
         function setSetting(key, value) {
-            fetch('/action/set-setting?key=' + encodeURIComponent(key) + '&value=' + encodeURIComponent(value))
+            fetch('/action/set-setting?key=' + encodeURIComponent(key) + '&value=' + encodeURIComponent(value), POST)
                 .then(() => { showToast(key.replace(/_/g, ' ') + ': ' + value); fetchStatus(); });
         }
 
@@ -952,7 +1014,7 @@ class WebServer(
             const enabled = document.getElementById('toggleAuth').checked;
             const username = document.getElementById('authUsername').value;
             const password = document.getElementById('authPassword').value;
-            fetch('/action/set-auth?enabled=' + enabled + '&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password))
+            fetch('/action/set-auth?enabled=' + enabled + '&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password), POST)
                 .then(() => { showToast('Auth ' + (enabled ? 'enabled' : 'disabled')); fetchStatus(); });
         }
         
