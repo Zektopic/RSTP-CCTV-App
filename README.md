@@ -65,8 +65,8 @@ NVR can consume, and keeps every frame on your own network.
 ### Monitoring
 - **Web dashboard** on port `8080` — live preview, every setting, battery and Wi-Fi status
 - **Motion detection** with adjustable sensitivity, running entirely on-device
-- **Person and animal detection** via MediaPipe Tasks *(requires a model — see
-  [setup](#object-detection-setup))*
+- **Person and animal detection** via MediaPipe Tasks, with a COCO model **bundled**, so
+  it works on a fresh install
 - **Event captions** describing each snapshot in plain language, generated on-device by
   Gemini Nano *(only on hardware with AICore — silently absent everywhere else)*
 - **Event storage** with snapshots, a 72-hour retention window and a hard event cap
@@ -309,15 +309,16 @@ No internet permission is used to send data anywhere. Nothing leaves your networ
 
 ## Object detection setup
 
-Motion detection works out of the box. Person and animal detection needs a TensorFlow
-Lite model, which is **not bundled** — model licences vary and the binary is large.
+**Nothing to do — a model is bundled.** Motion detection and person/animal detection both
+work on a fresh install.
 
-1. Download a COCO-trained object detection model, for example
-   [SSD MobileNet V1](https://www.kaggle.com/models/tensorflow/ssd-mobilenet-v1) from
-   TensorFlow Hub or Kaggle Models.
-2. Rename it to `detect.tflite`.
-3. Place it at `app/src/main/assets/detect.tflite`.
-4. Rebuild and install.
+The bundled model is [EfficientDet-Lite0](https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector)
+(float32, COCO classes, ~13.8 MB), published by Google for MediaPipe Tasks under
+Apache-2.0. Full attribution is in `app/src/main/assets/DETECT_MODEL_README.txt`.
+
+To use a different model, drop it in as `app/src/main/assets/detect.tflite`, replacing the
+bundled one, then rebuild. It must carry **TFLite Metadata** — MediaPipe reads the labels
+from it, and a bare model will fail to load.
 
 The dashboard's *Model Status* row reports whether the model loaded. Recognised labels
 are `person`, `cat`, `dog`, `bird`, `horse`, `sheep` and `cow`; the detection threshold is
@@ -422,7 +423,8 @@ block autostart outright regardless of the setting.
 <details>
 <summary><b>Person detection stays unavailable</b></summary>
 
-`detect.tflite` is missing — see [object detection setup](#object-detection-setup). Motion
+`detect.tflite` is missing or lacks TFLite Metadata — see
+[object detection setup](#object-detection-setup). Motion
 detection is unaffected.
 </details>
 
