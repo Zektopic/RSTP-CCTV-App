@@ -328,7 +328,14 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     "audio_enabled" -> {
                         audioEnabled = value.toBoolean()
                         AppPreferences.setAudioEnabled(this, audioEnabled)
-                        onMain { restartStreamIfRunning() }
+                        // Re-declare the type BEFORE the stream comes back with audio:
+                        // the restart would otherwise open the microphone while the
+                        // service is still declared camera-only, which is the very
+                        // SecurityException the type is there to prevent.
+                        onMain {
+                            applyForegroundServiceType()
+                            restartStreamIfRunning()
+                        }
                     }
                     "web_auth_enabled" -> {
                         webAuthEnabled = value.toBoolean()
@@ -594,18 +601,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         AppPreferences.setAudioEnabled(this, audioEnabled)
         motionDetector.updateSensitivity(AppPreferences.getMotionSensitivity(this))
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // The declared type must cover every restricted resource the service touches.
-            // Recording audio under a camera-only type throws SecurityException on
-            // Android 14+, which is why the microphone bit is added whenever audio is on.
-            var serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-            if (audioEnabled) {
-                serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            }
-            startForeground(NOTIFICATION_ID, buildNotification(), serviceType)
-        } else {
-            startForeground(NOTIFICATION_ID, buildNotification())
-        }
+        applyForegroundServiceType()
 
         // Initialize wrapper if needed
         if (!::rtspServerCamera.isInitialized) {
@@ -1008,6 +1004,26 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
      * notification renders blank or is dropped outright, which for a camera that is
      * recording is both a usability and a transparency problem.
      */
+    /**
+     * (Re-)declares which restricted resources this foreground service touches.
+     *
+     * The declared type must cover every one of them: recording audio under a
+     * camera-only type throws SecurityException on Android 14+. Calling
+     * startForeground again on an already-foreground service updates the type in
+     * place, which is what lets the audio toggle take effect without a restart.
+     */
+    private fun applyForegroundServiceType() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            var serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            if (audioEnabled) {
+                serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+            startForeground(NOTIFICATION_ID, buildNotification(), serviceType)
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        }
+    }
+
     private fun buildNotification(): android.app.Notification {
         val contentIntent = android.app.PendingIntent.getActivity(
             this,
