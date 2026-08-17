@@ -13,7 +13,6 @@ class EventsActivity : AppCompatActivity() {
     private lateinit var binding: ActivityEventsBinding
     private lateinit var eventStore: EventStore
     private lateinit var adapter: EventsAdapter
-    private var isSidebarCollapsed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,34 +43,15 @@ class EventsActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
-        binding.btnRefreshEvents.setOnClickListener { refreshEventsList() }
+        binding.toolbar.setNavigationOnClickListener { finish() }
 
-        binding.btnToggleSidebar.setOnClickListener {
-            isSidebarCollapsed = !isSidebarCollapsed
-            applySidebarState()
-        }
-
-        binding.btnNavSettings.setOnClickListener {
-            startActivity(Intent(this, MainActivity::class.java))
-            finish()
-        }
-
-        binding.btnNavEvents.setOnClickListener { refreshEventsList() }
-    }
-
-    private fun applySidebarState() {
-        val widthDp = if (isSidebarCollapsed) 56 else 88
-        val widthPx = (widthDp * resources.displayMetrics.density).toInt()
-        val params = binding.sidebarContainer.layoutParams
-        params.width = widthPx
-        binding.sidebarContainer.layoutParams = params
-
-        binding.btnNavSettings.text = if (isSidebarCollapsed) "S" else getString(R.string.nav_settings)
-        binding.btnNavEvents.text = if (isSidebarCollapsed) "E" else getString(R.string.nav_events)
-        binding.btnToggleSidebar.text = if (isSidebarCollapsed) {
-            getString(R.string.sidebar_expand_symbol)
-        } else {
-            getString(R.string.sidebar_collapse_symbol)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_refresh) {
+                refreshEventsList()
+                true
+            } else {
+                false
+            }
         }
     }
 

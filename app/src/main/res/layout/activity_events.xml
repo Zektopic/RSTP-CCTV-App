@@ -4,89 +4,40 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical"
     tools:context=".EventsActivity">
 
-    <LinearLayout
-        android:id="@+id/sidebar_container"
-        android:layout_width="88dp"
-        android:layout_height="match_parent"
-        android:background="?attr/colorSurfaceContainerLow"
-        android:gravity="top|center_horizontal"
-        android:orientation="vertical"
-        android:paddingTop="24dp"
-        android:paddingHorizontal="8dp">
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fitsSystemWindows="false">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_toggle_sidebar"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:minHeight="0dp"
-            android:paddingVertical="4dp"
-            android:text="@string/sidebar_collapse_symbol" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_nav_settings"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/nav_settings" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_nav_events"
-            style="@style/Widget.Material3.Button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/nav_events" />
-    </LinearLayout>
+            android:layout_height="?attr/actionBarSize"
+            app:menu="@menu/menu_events"
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:title="@string/section_events" />
+    </com.google.android.material.appbar.AppBarLayout>
 
     <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
         android:layout_weight="1"
         android:orientation="vertical"
         android:paddingHorizontal="16dp"
-        android:paddingTop="32dp">
+        android:paddingTop="8dp">
 
-        <LinearLayout
-            android:layout_width="match_parent"
+        <TextView
+            android:id="@+id/text_events_count"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:layout_marginBottom="16dp">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/section_events"
-                    android:textAppearance="@style/TextAppearance.Material3.HeadlineLarge"
-                    android:textColor="?attr/colorPrimary"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/text_events_count"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                    tools:text="12 events" />
-            </LinearLayout>
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_refresh_events"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/refresh_events" />
-        </LinearLayout>
+            android:layout_marginBottom="12dp"
+            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            tools:text="12 events" />
 
         <TextView
             android:id="@+id/text_events_empty"
