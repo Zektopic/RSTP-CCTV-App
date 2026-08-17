@@ -17,6 +17,8 @@ class WebServer(
     private val isStreaming: () -> Boolean,
     private val onCodecUpdate: (String) -> Unit,
     private val getCurrentCodec: () -> String,
+    /** What the encoder actually negotiated; differs from the request after a fallback. */
+    private val getActiveCodec: () -> String,
     private val onResolutionUpdate: (Int, Int) -> Unit,
     private val getCurrentResolution: () -> String,
     private val getAuthEnabled: () -> Boolean,
@@ -230,6 +232,7 @@ class WebServer(
             val json = """{
                 "streaming":$streaming,
                 "codec":"$codec",
+                "activeCodec":"${getActiveCodec()}",
                 "resolution":"$resolution",
                 "authEnabled":$authEnabled,
                 "username":"${escapeJson(username)}",

@@ -70,6 +70,9 @@
     <string name="web_auth_summary">Require the username and password below for the dashboard on port 8080</string>
     <string name="generated_password_title">Dashboard password generated</string>
     <string name="generated_password_message">Your web dashboard is protected.\n\nUsername: admin\nPassword: %1$s\n\nSave this now — it is also shown in the Authentication section.</string>
+    <!-- Shown when credentials exist but the dashboard is deliberately left open, so the
+         dialog never claims protection that is not actually in force. -->
+    <string name="generated_password_message_unprotected">A dashboard password has been created, but \"Secure web dashboard\" is currently OFF, so anyone on your network can still reach it.\n\nUsername: admin\nPassword: %1$s\n\nTurn the setting on under Security to require it.</string>
     <string name="generated_password_ok">Got it</string>
 
     <!-- Startup -->

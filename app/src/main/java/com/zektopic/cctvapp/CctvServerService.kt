@@ -57,6 +57,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         /** How long after the last /shot.jpg we keep treating a viewer as present. */
         private const val VIEWER_IDLE_TIMEOUT_MS = 10_000L
 
+        /** Width the detection pipeline downsamples frames to before analysis. */
+        private const val ANALYSIS_TARGET_WIDTH = 640
+
         /** COCO labels treated as an "animal" event. */
         private val ANIMAL_LABELS = setOf("cat", "dog", "bird", "horse", "sheep", "cow")
     }
@@ -72,6 +75,12 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     @Volatile private var videoWidth = 640
     @Volatile private var videoHeight = 480
     @Volatile private var videoCodec = "H264"
+    /**
+     * The codec actually negotiated with the encoder, which differs from [videoCodec] when
+     * the requested one could not be prepared. Surfaced in /status so the dashboard can
+     * show the truth without destroying the user's stored preference.
+     */
+    @Volatile private var activeCodec = "H264"
     @Volatile private var forceSoftware = false
     @Volatile private var showPreview = false
     @Volatile private var authEnabled = false
@@ -269,6 +278,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 }
             },
             getCurrentCodec = { videoCodec },
+            getActiveCodec = { activeCodec },
             onResolutionUpdate = { w, h ->
                 if (videoWidth != w || videoHeight != h) {
                     videoWidth = w
@@ -281,8 +291,14 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 if (videoWidth == 0 && videoHeight == 0) "0x0" else "${videoWidth}x${videoHeight}"
             },
             getAuthEnabled = { authEnabled },
-            getUsername = { authUsername },
-            getPassword = { authPassword },
+            // Read straight from preferences rather than the cached fields. The service
+            // caches these at onCreate, but MainActivity seeds the generated password
+            // afterwards on first run -- so the cached copy stayed empty, and an empty
+            // expected password makes isAuthorized() fall open to avoid locking the
+            // owner out. Net effect: a brand-new install served the dashboard
+            // unauthenticated while telling the user it was protected.
+            getUsername = { AppPreferences.getUsername(this) },
+            getPassword = { AppPreferences.getPassword(this) },
             // Each branch assigns and persists synchronously on the calling thread, then
             // posts only the camera/view work. That ordering matters: the dashboard polls
             // /status immediately after a change, and an async assignment would make the
@@ -409,7 +425,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             },
             getBatteryLevel = { getBatteryLevel() },
             getWifiStrength = { getWifiStrength() },
-            getWebAuthEnabled = { webAuthEnabled }
+            getWebAuthEnabled = { AppPreferences.getWebAuthEnabled(this) }
         )
         webServer.start()
         snapshotHandler.post(snapshotRunnable)
@@ -487,14 +503,37 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    /**
+     * Decodes a snapshot down to roughly [ANALYSIS_TARGET_WIDTH] for analysis.
+     *
+     * The frames arriving here are full stream resolution -- 1920x1080 in the default
+     * setup -- and were previously decoded at full size twice a second, forever, while
+     * detection was on. Nothing downstream needs that: the object detector resizes to its
+     * own small input tensor anyway, and the motion detector scales down before
+     * differencing. inSampleSize is a power of two, so this is a cheap decode-time
+     * reduction rather than an extra scaling pass, and it cuts both decode cost and peak
+     * bitmap memory by roughly the square of the factor.
+     */
+    private fun decodeForAnalysis(jpeg: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+
+        var sampleSize = 1
+        while (bounds.outWidth / (sampleSize * 2) >= ANALYSIS_TARGET_WIDTH) {
+            sampleSize *= 2
+        }
+
+        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        return BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, options)
+    }
+
     private fun runDetectionPipelineIfEnabled(snapshotJpeg: ByteArray) {
         if (!detectionEnabled || (!motionDetectionEnabled && !objectDetectionEnabled)) return
 
         detectionExecutor.execute {
             var bitmap: Bitmap? = null
             try {
-                bitmap = BitmapFactory.decodeByteArray(snapshotJpeg, 0, snapshotJpeg.size)
-                    ?: return@execute
+                bitmap = decodeForAnalysis(snapshotJpeg) ?: return@execute
 
                 if (motionDetectionEnabled) {
                     val motion = motionDetector.isMotionDetected(bitmap)
@@ -551,8 +590,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         captionExecutor.execute {
             var bitmap: Bitmap? = null
             try {
-                bitmap = BitmapFactory.decodeByteArray(snapshotJpeg, 0, snapshotJpeg.size)
-                    ?: return@execute
+                bitmap = decodeForAnalysis(snapshotJpeg) ?: return@execute
                 val caption = captioner.caption(bitmap) ?: return@execute
                 eventStore.setCaption(eventId, caption)
             } catch (t: Throwable) {
@@ -798,14 +836,19 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
                     rtspServerCamera.startStream()
                     applyTimestampOverlay()
+                    activeCodec = videoCodec
                 } else {
                     android.util.Log.w("CctvServerService", "Codec $selectedCodec preparation failed, falling back to H264")
                     rtspServerCamera.setVideoCodec(VideoCodec.H264)
                     if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
                          rtspServerCamera.startStream()
                          applyTimestampOverlay()
-                         videoCodec = "H264"
-                         AppPreferences.setVideoCodec(this, videoCodec)
+                         // Record that THIS session fell back, but do NOT overwrite the
+                         // user's stored choice. prepareVideo can fail transiently -- a
+                         // quick stop/start was enough to drop a working H.265 stream --
+                         // and persisting H264 silently threw away a setting the device
+                         // is perfectly capable of honouring on the next attempt.
+                         activeCodec = "H264"
                     } else {
                          android.util.Log.e("CctvServerService", "H264 fallback preparation also failed.")
                     }

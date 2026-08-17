@@ -506,9 +506,18 @@ class MainActivity : AppCompatActivity() {
         binding.editUsername.setText(AppPreferences.getUsername(this))
         binding.editPassword.setText(generated)
 
+        // Only claim the dashboard is protected when it actually is. The password is
+        // seeded regardless of the toggle, so with it off the old wording told the user
+        // they were covered while the dashboard stayed reachable by anyone on the network.
+        val message = if (AppPreferences.getWebAuthEnabled(this)) {
+            getString(R.string.generated_password_message, generated)
+        } else {
+            getString(R.string.generated_password_message_unprotected, generated)
+        }
+
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(R.string.generated_password_title)
-            .setMessage(getString(R.string.generated_password_message, generated))
+            .setMessage(message)
             .setPositiveButton(R.string.generated_password_ok, null)
             .show()
     }

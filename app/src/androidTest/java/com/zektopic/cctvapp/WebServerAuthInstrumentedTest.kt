@@ -55,6 +55,7 @@ class WebServerAuthInstrumentedTest {
             isStreaming = { false },
             onCodecUpdate = {},
             getCurrentCodec = { "H264" },
+            getActiveCodec = { "H264" },
             onResolutionUpdate = { _, _ -> },
             getCurrentResolution = { "640x480" },
             getAuthEnabled = { false },
