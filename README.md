@@ -65,8 +65,10 @@ NVR can consume, and keeps every frame on your own network.
 ### Monitoring
 - **Web dashboard** on port `8080` — live preview, every setting, battery and Wi-Fi status
 - **Motion detection** with adjustable sensitivity, running entirely on-device
-- **Person and animal detection** via LiteRT / TensorFlow Lite *(requires a model — see
+- **Person and animal detection** via MediaPipe Tasks *(requires a model — see
   [setup](#object-detection-setup))*
+- **Event captions** describing each snapshot in plain language, generated on-device by
+  Gemini Nano *(only on hardware with AICore — silently absent everywhere else)*
 - **Event storage** with snapshots, a 72-hour retention window and a hard event cap
 - **Events browser** in-app, with thumbnails, and a Frigate-style JSON API
 
@@ -90,7 +92,7 @@ flowchart LR
 
     subgraph DET [Detection pipeline]
         MOT[Motion detector<br/>luma differencing]
-        OBJ[LiteRT object detector<br/>person / animal]
+        OBJ[MediaPipe object detector<br/>person / animal]
     end
 
     DET --> STORE[(Event store<br/>JSON + snapshots)]
@@ -112,6 +114,7 @@ detection is off.
 | Authentication, CSRF and HTML escaping | `WebAuth.kt` |
 | Motion detection | `MotionDetector.kt` |
 | Object detection | `LiteRtObjectDetector.kt` |
+| Event captions (Gemini Nano) | `EventCaptioner.kt` |
 | Event persistence and retention | `EventStore.kt` |
 | Settings | `AppPreferences.kt` |
 
@@ -429,11 +432,11 @@ detection is unaffected.
 
 - [ ] Clip recording (`/events/<id>/clip.mp4` is reserved but not yet implemented)
 - [ ] HTTPS/TLS for the dashboard, so credentials are not sent in plaintext
-- [ ] Migrate to a 16 KB page-size-aligned LiteRT build — the current TensorFlow native
-      binary is 4 KB-aligned and relies on `useLegacyPackaging`, which Google Play will
-      eventually reject
+- [x] ~~Migrate to a 16 KB page-size-aligned detection build~~ — done: replaced
+      `tensorflow-lite-task-vision` (frozen at 0.4.4, `libtask_vision_jni.so` aligned to
+      4 KB) with MediaPipe Tasks, whose native is aligned to 16 KB
 - [ ] Enable R8 for release builds (needs keep rules for the reflection-heavy
-      TensorFlow and RootEncoder dependencies, plus an on-device verification pass)
+      MediaPipe and RootEncoder dependencies, plus an on-device verification pass)
 - [ ] ONVIF discovery so NVRs can find the camera automatically
 - [ ] Continuous recording with a rolling buffer
 - [ ] Multi-camera management from one dashboard
@@ -465,4 +468,5 @@ terms.
 - [RootEncoder](https://github.com/pedroSG94/RootEncoder) and
   [RTSP-Server](https://github.com/pedroSG94/RTSP-Server) by pedroSG94
 - [NanoHTTPD](https://github.com/NanoHttpd/nanohttpd)
-- [TensorFlow Lite Task Vision](https://www.tensorflow.org/lite)
+- [MediaPipe Tasks](https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector)
+- [ML Kit GenAI](https://developers.google.com/ml-kit/genai) (Gemini Nano captions)

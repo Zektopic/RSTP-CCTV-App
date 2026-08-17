@@ -127,8 +127,11 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     }
     private val currentSnapshot = AtomicReference<ByteArray>(null)
     private val detectionExecutor = Executors.newSingleThreadExecutor()
+    /** Separate from [detectionExecutor]: captioning is slow and must not stall detection. */
+    private val captionExecutor = Executors.newSingleThreadExecutor()
     private val motionDetector = MotionDetector()
     private lateinit var liteRtObjectDetector: LiteRtObjectDetector
+    private var eventCaptioner: EventCaptioner? = null
     private val lastEventMsByType = mutableMapOf<String, Long>()
     private val snapshotHandler = Handler(Looper.getMainLooper())
 
@@ -186,6 +189,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         audioEnabled = AppPreferences.getAudioEnabled(this)
         motionDetector.updateSensitivity(AppPreferences.getMotionSensitivity(this))
         liteRtObjectDetector = LiteRtObjectDetector(this)
+        eventCaptioner = EventCaptioner(this)
 
         // Setup light sensor for night mode
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -528,7 +532,35 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         if (now - lastAt < cooldownMs) return
 
         lastEventMsByType[type] = now
-        eventStore.createDetectionEvent(type, score, snapshotJpeg)
+        val event = eventStore.createDetectionEvent(type, score, snapshotJpeg)
+        captionEventInBackground(event.id, snapshotJpeg)
+    }
+
+    /**
+     * Adds a Gemini Nano description to an event after the fact.
+     *
+     * Deliberately on its own single-thread executor rather than [detectionExecutor]:
+     * inference can take seconds, and detection runs at up to 2 FPS. Sharing the executor
+     * would stall the pipeline and drop events. Nothing here can fail the event -- it is
+     * already stored by the time this runs.
+     */
+    private fun captionEventInBackground(eventId: String, snapshotJpeg: ByteArray) {
+        val captioner = eventCaptioner ?: return
+        if (!captioner.isPossiblySupported()) return
+
+        captionExecutor.execute {
+            var bitmap: Bitmap? = null
+            try {
+                bitmap = BitmapFactory.decodeByteArray(snapshotJpeg, 0, snapshotJpeg.size)
+                    ?: return@execute
+                val caption = captioner.caption(bitmap) ?: return@execute
+                eventStore.setCaption(eventId, caption)
+            } catch (t: Throwable) {
+                android.util.Log.w("CctvServerService", "Event captioning failed", t)
+            } finally {
+                bitmap?.recycle()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -960,6 +992,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         retentionHandler.removeCallbacks(retentionRunnable)
         timestampHandler.removeCallbacks(timestampRunnable)
         detectionExecutor.shutdownNow()
+        captionExecutor.shutdownNow()
+        eventCaptioner?.close()
+        if (::liteRtObjectDetector.isInitialized) liteRtObjectDetector.close()
         sensorManager?.unregisterListener(lightSensorListener)
         
         webServer.stop()

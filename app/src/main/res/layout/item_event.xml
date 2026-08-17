@@ -54,6 +54,22 @@
                 android:layout_height="wrap_content"
                 android:textAppearance="@style/TextAppearance.Material3.BodySmall"
                 tools:text="confidence 92%" />
+
+            <!-- Gemini Nano caption. Absent on devices without AICore, so the row has to
+                 read correctly with this gone, hence visibility="gone" by default. -->
+            <TextView
+                android:id="@+id/text_event_caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textStyle="italic"
+                android:visibility="gone"
+                tools:text="A person walking past a parked car"
+                tools:visibility="visible" />
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

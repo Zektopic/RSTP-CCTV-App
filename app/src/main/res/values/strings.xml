@@ -49,7 +49,7 @@
     <string name="section_detection">Detection</string>
     <string name="detection_enabled">Enable Detection</string>
     <string name="motion_detection_enabled">Motion Detection</string>
-    <string name="object_detection_enabled">People/Animal Detection (LiteRT)</string>
+    <string name="object_detection_enabled">People/Animal Detection</string>
     <string name="section_events">Saved Events</string>
     <string name="refresh_events">Refresh</string>
     <string name="no_events_yet">No events yet. Enable detection and wait for motion/person/animal triggers.</string>

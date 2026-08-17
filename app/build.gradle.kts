@@ -120,5 +120,6 @@ dependencies {
     implementation(libs.rootencoder.library)
     implementation(libs.rtsp.server)
     implementation(libs.nanohttpd)
-    implementation(libs.tensorflow.lite.task.vision)
+    implementation(libs.mediapipe.tasks.vision)
+    implementation(libs.mlkit.genai.image.description)
 }

@@ -25,6 +25,47 @@ class EventStoreTest {
 
     private val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0x00, 0x01)
 
+    // --- captions (Gemini Nano) ---
+
+    @Test
+    fun `attaches a caption to a stored event and persists it`() {
+        val eventStore = store()
+        val event = eventStore.createDetectionEvent("person", 0.9, jpeg)
+        assertNull("events start without a caption", event.caption)
+
+        assertTrue(eventStore.setCaption(event.id, "a person near a door"))
+
+        // Re-read from disk rather than trusting the in-memory value.
+        val reloaded = EventStore(tempFolder.root).listRecentEvents(10)
+            .firstOrNull { it.id == event.id }
+        assertEquals("a person near a door", reloaded?.caption)
+    }
+
+    @Test
+    fun `captioning an evicted event is reported rather than throwing`() {
+        // Retention can drop an event between detection and the caption arriving,
+        // because captioning is slow and deliberately runs afterwards.
+        val eventStore = store()
+        assertFalse(eventStore.setCaption("no-such-event-id", "anything"))
+    }
+
+    @Test
+    fun `caption survives a json round trip and is omitted when absent`() {
+        val withCaption = DetectionEvent(
+            id = "a", type = "person", score = 0.5, startTimeMs = 1L, endTimeMs = 1L,
+            snapshotFileName = null, clipFileName = null, createdAtMs = 1L,
+            caption = "a dog on the lawn"
+        )
+        assertEquals(
+            "a dog on the lawn",
+            DetectionEvent.fromJsonObject(withCaption.toJsonObject()).caption
+        )
+
+        val without = withCaption.copy(caption = null)
+        assertFalse(without.toJsonObject().has("caption"))
+        assertNull(DetectionEvent.fromJsonObject(without.toJsonObject()).caption)
+    }
+
     @Test
     fun `creates its directories and an empty index`() {
         store()

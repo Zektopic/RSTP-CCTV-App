@@ -800,7 +800,7 @@ class WebServer(
 
         <!-- Detection -->
         <div class="settings-card">
-            <h3>Detection (LiteRT + Motion)</h3>
+            <h3>Detection (Object + Motion)</h3>
             <div class="setting-row">
                 <div>
                     <span class="setting-label">Enable Detection</span>
@@ -821,7 +821,7 @@ class WebServer(
             <div class="setting-row">
                 <div>
                     <span class="setting-label">People/Animal Detection</span>
-                    <div class="setting-sublabel">Uses LiteRT TensorFlow model from assets/detect.tflite</div>
+                    <div class="setting-sublabel">Uses a TensorFlow Lite model from assets/detect.tflite</div>
                 </div>
                 <label class="toggle">
                     <input type="checkbox" id="toggleObjectDetection" onchange="setSetting('object_detection_enabled', this.checked)">
@@ -951,7 +951,7 @@ class WebServer(
                     document.getElementById('toggleObjectDetection').checked = data.objectDetectionEnabled;
                     const detectorStatusText = document.getElementById('detectorStatusText');
                     detectorStatusText.textContent = data.objectDetectorReady
-                        ? 'LiteRT model loaded'
+                        ? 'Detection model loaded'
                         : 'Model missing: add app/src/main/assets/detect.tflite';
                     
                     // Sync auth

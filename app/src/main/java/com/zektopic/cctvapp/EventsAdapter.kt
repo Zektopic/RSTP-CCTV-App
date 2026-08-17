@@ -47,6 +47,7 @@ class EventsAdapter(
         val type: TextView = view.findViewById(R.id.text_event_type)
         val time: TextView = view.findViewById(R.id.text_event_time)
         val meta: TextView = view.findViewById(R.id.text_event_meta)
+        val caption: TextView = view.findViewById(R.id.text_event_caption)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): EventViewHolder {
@@ -62,6 +63,18 @@ class EventsAdapter(
         holder.meta.text = event.score
             ?.let { "confidence ${(it * 100).toInt()}%" }
             ?: "no confidence recorded"
+
+        // A caption only exists on devices with Gemini Nano, and it arrives seconds
+        // after the event, so a row may legitimately have none. Reset on rebind rather
+        // than only setting it, or a recycled holder shows the previous row's caption.
+        val caption = event.caption
+        if (caption.isNullOrBlank()) {
+            holder.caption.visibility = View.GONE
+            holder.caption.text = null
+        } else {
+            holder.caption.visibility = View.VISIBLE
+            holder.caption.text = caption
+        }
 
         holder.itemView.setOnClickListener { onEventClick(event) }
 

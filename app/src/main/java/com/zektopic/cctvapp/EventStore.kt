@@ -153,6 +153,24 @@ class EventStore(
         return listEvents(null, limit.coerceIn(1, 500))
     }
 
+    /**
+     * Attaches a caption to an already-stored event.
+     *
+     * Captions arrive seconds after the event itself, because on-device description is
+     * far slower than detection and must not hold up storing the event. Returns false if
+     * the event has since been evicted by retention, which is not an error.
+     */
+    fun setCaption(id: String, caption: String): Boolean {
+        synchronized(lock) {
+            val events = readEventsInternal()
+            val index = events.indexOfFirst { it.id == id }
+            if (index < 0) return false
+            events[index] = events[index].copy(caption = caption)
+            writeEventsInternal(events)
+            return true
+        }
+    }
+
     private fun addEvent(event: DetectionEvent) {
         synchronized(lock) {
             val events = readEventsInternal()
