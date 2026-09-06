@@ -99,7 +99,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     @Volatile private var keyframeIntervalSeconds = EncoderProfile.DEFAULT_KEYFRAME_INTERVAL_SECONDS
     /** The bitrate the encoder was last prepared with, for /status. */
     @Volatile private var activeBitrateKbps = 0
-    @Volatile private var adaptiveQualityEnabled = true
+    @Volatile private var adaptiveQualityEnabled = false
     /** The most recent thermal reading; always NONE below API 29, which has no API. */
     @Volatile private var thermalStatus = AdaptiveQuality.THERMAL_NONE
     /** What the adaptive policy last decided, surfaced in /status so the UI can say why. */

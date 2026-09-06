@@ -135,6 +135,6 @@
     <string name="codec_support_label">This device encodes: %1$s</string>
     <!-- Adaptive quality -->
     <string name="adaptive_quality">Adapt to heat and battery</string>
-    <string name="adaptive_quality_summary">Step the bitrate down when the device overheats or the battery runs low, so the stream stays smooth instead of stuttering. Turn off for a mains-powered camera that needs a predictable bitrate.</string>
+    <string name="adaptive_quality_summary">Off by default: a fixed camera is expected to run hot, and may be running other work too. Turn this on only if the stream itself stutters — it trades bitrate for stability once the system starts throttling.</string>
     <string name="adaptive_quality_note_pre_q">This device runs Android %1$s, which has no thermal API. Only the low-battery half of this setting applies.</string>
 </resources>
