@@ -44,6 +44,9 @@ class MainActivity : AppCompatActivity() {
 
     private val permissionRequestCode = 100
 
+    /** Counts taps on the version row; see [TapUnlock] for why it is time-windowed. */
+    private val advancedUnlock = TapUnlock()
+
     private val resolutions = arrayOf("640x480", "1280x720", "1920x1080", "Max")
     private val codecs = arrayOf("H264", "H265", "AV1")
     private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
@@ -65,7 +68,87 @@ class MainActivity : AppCompatActivity() {
         setupSpinners()
         loadSavedSettings()
         setupListeners()
+        setupAdvancedSection()
         updateServerStatus(isServiceRunning(CctvServerService::class.java))
+    }
+
+    /**
+     * Wires the version row, the reveal gesture and the Advanced card itself.
+     *
+     * The card is `gone` in the layout, so an install that has never performed the
+     * gesture renders exactly as before.
+     */
+    private fun setupAdvancedSection() {
+        binding.textVersion.text = getString(R.string.version_row, versionName())
+        setAdvancedVisible(AppPreferences.getAdvancedUnlocked(this))
+
+        binding.textVersion.setOnClickListener {
+            if (AppPreferences.getAdvancedUnlocked(this)) {
+                toast(getString(R.string.advanced_already_unlocked))
+                return@setOnClickListener
+            }
+
+            val result = advancedUnlock.tap(System.currentTimeMillis())
+            when {
+                result.unlocked -> {
+                    AppPreferences.setAdvancedUnlocked(this, true)
+                    setAdvancedVisible(true)
+                    toast(getString(R.string.advanced_unlocked))
+                }
+                result.showCountdown -> toast(
+                    resources.getQuantityString(
+                        R.plurals.advanced_countdown,
+                        result.remaining,
+                        result.remaining
+                    )
+                )
+            }
+        }
+
+        binding.btnHideAdvanced.setOnClickListener {
+            AppPreferences.setAdvancedUnlocked(this, false)
+            advancedUnlock.reset()
+            setAdvancedVisible(false)
+            toast(getString(R.string.advanced_hidden))
+        }
+
+        binding.btnResetAdvanced.setOnClickListener {
+            AppPreferences.resetAdvancedSettings(this)
+            // Re-read rather than assuming the defaults here, so this stays correct as
+            // further advanced settings are added to AppPreferences.ADVANCED_KEYS.
+            loadAdvancedSettings()
+            toast(getString(R.string.advanced_reset_done))
+            restartServer()
+        }
+    }
+
+    /**
+     * The installed versionName.
+     *
+     * Read from the PackageManager rather than BuildConfig, which this module does not
+     * generate (`buildFeatures` enables viewBinding only), and because CI overrides
+     * versionName from the release tag -- so the package is the one source that is right
+     * for both local and published builds.
+     */
+    private fun versionName(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+    } catch (e: PackageManager.NameNotFoundException) {
+        "?"
+    }
+
+    /** Reflects the persisted advanced values back into their controls. */
+    private fun loadAdvancedSettings() {
+        binding.switchForceSoftware.setOnCheckedChangeListener(null)
+        binding.switchForceSoftware.isChecked = AppPreferences.getForceSoftware(this)
+        binding.switchForceSoftware.setOnCheckedChangeListener(forceSoftwareListener)
+    }
+
+    private fun setAdvancedVisible(visible: Boolean) {
+        binding.cardAdvanced.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun setupSpinners() {
@@ -164,6 +247,17 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    /**
+     * Held as a field rather than a lambda at the call site: "Reset advanced settings"
+     * writes the switch back to its default, and doing that with the listener still
+     * attached would fire another save and another stream restart.
+     */
+    private val forceSoftwareListener =
+        android.widget.CompoundButton.OnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setForceSoftware(this, isChecked)
+            restartServer()
+        }
+
     private fun setupListeners() {
         binding.switchServer.setOnCheckedChangeListener(serverSwitchListener)
 
@@ -184,10 +278,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.switchForceSoftware.setOnCheckedChangeListener { _, isChecked ->
-            AppPreferences.setForceSoftware(this, isChecked)
-            restartServer()
-        }
+        binding.switchForceSoftware.setOnCheckedChangeListener(forceSoftwareListener)
 
         (binding.spinnerResolution as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
             val (width, height) = parseResolution(resolutions[position])
