@@ -349,6 +349,36 @@ object AppPreferences {
             .apply()
     }
 
+    // --- Adaptive quality (advanced) ---
+    private const val KEY_ADAPTIVE_QUALITY = "adaptive_quality_enabled"
+
+    /**
+     * Whether the stream steps down when the device overheats or the battery runs low.
+     *
+     * **Off by default.** A phone acting as a fixed camera is expected to run hot: nobody
+     * is holding it, it is usually on mains power, and a predictable bitrate is worth
+     * more than a cool chassis.
+     *
+     * A camera phone is also rarely doing only camera work. On the Galaxy M21 this was
+     * measured on, the device runs BOINC around the clock -- load average 26 on eight
+     * cores -- and consequently sits at THERMAL_STATUS_SEVERE permanently. That is the
+     * deployment working as intended, not a fault, and an on-by-default policy would
+     * have read it as a reason to pin the camera to half its configured bitrate forever.
+     * The stream is not the workload that should yield.
+     *
+     * Worth turning on when a device genuinely cannot sustain the load. Once the platform
+     * is throttling, the SoC is already dropping clocks, the encoder starts missing its
+     * deadlines, and the stream stutters in a way that looks like a network fault;
+     * backing the bitrate off keeps a lower-quality stream running smoothly instead.
+     * That is a trade-off worth offering, not one worth making on the user's behalf.
+     */
+    fun getAdaptiveQualityEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ADAPTIVE_QUALITY, false)
+
+    fun setAdaptiveQualityEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ADAPTIVE_QUALITY, enabled).apply()
+    }
+
     // --- Advanced settings ---
     private const val KEY_ADVANCED_UNLOCKED = "advanced_unlocked"
 
@@ -387,6 +417,7 @@ object AppPreferences {
         KEY_ENCODER_IMPLEMENTATION,
         KEY_BITRATE_KBPS,
         KEY_VIDEO_FPS,
-        KEY_KEYFRAME_INTERVAL_SECONDS
+        KEY_KEYFRAME_INTERVAL_SECONDS,
+        KEY_ADAPTIVE_QUALITY
     )
 }
