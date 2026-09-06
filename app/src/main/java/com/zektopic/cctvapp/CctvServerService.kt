@@ -82,6 +82,12 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
      */
     @Volatile private var activeCodec = "H264"
     @Volatile private var forceSoftware = false
+    /** Hand-pinned bitrate in kbit/s, or [AppPreferences.BITRATE_AUTO]. */
+    @Volatile private var bitrateKbps = AppPreferences.BITRATE_AUTO
+    @Volatile private var videoFps = EncoderProfile.DEFAULT_FPS
+    @Volatile private var keyframeIntervalSeconds = EncoderProfile.DEFAULT_KEYFRAME_INTERVAL_SECONDS
+    /** The bitrate the encoder was last prepared with, for /status. */
+    @Volatile private var activeBitrateKbps = 0
     @Volatile private var showPreview = false
     @Volatile private var authEnabled = false
     @Volatile private var authUsername = ""
@@ -181,6 +187,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         videoWidth = AppPreferences.getVideoWidth(this)
         videoHeight = AppPreferences.getVideoHeight(this)
         forceSoftware = AppPreferences.getForceSoftware(this)
+        bitrateKbps = AppPreferences.getBitrateKbps(this)
+        videoFps = AppPreferences.getVideoFps(this)
+        keyframeIntervalSeconds = AppPreferences.getKeyframeIntervalSeconds(this)
         showPreview = AppPreferences.getShowPreview(this)
         authEnabled = AppPreferences.getAuthEnabled(this)
         authUsername = AppPreferences.getUsername(this)
@@ -340,6 +349,27 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                         AppPreferences.setForceSoftware(this, forceSoftware)
                         onMain { restartStreamIfRunning() }
                     }
+                    // Encoder tuning. Each of these can only take effect by preparing
+                    // the encoder again, so they all restart an in-flight stream.
+                    "bitrate_kbps" -> {
+                        val requested = value.toIntOrNull() ?: AppPreferences.BITRATE_AUTO
+                        AppPreferences.setBitrateKbps(this, requested)
+                        bitrateKbps = AppPreferences.getBitrateKbps(this)
+                        onMain { restartStreamIfRunning() }
+                    }
+                    "video_fps" -> {
+                        val requested = value.toIntOrNull() ?: EncoderProfile.DEFAULT_FPS
+                        AppPreferences.setVideoFps(this, requested)
+                        videoFps = AppPreferences.getVideoFps(this)
+                        onMain { restartStreamIfRunning() }
+                    }
+                    "keyframe_interval_seconds" -> {
+                        val requested = value.toIntOrNull()
+                            ?: EncoderProfile.DEFAULT_KEYFRAME_INTERVAL_SECONDS
+                        AppPreferences.setKeyframeIntervalSeconds(this, requested)
+                        keyframeIntervalSeconds = AppPreferences.getKeyframeIntervalSeconds(this)
+                        onMain { restartStreamIfRunning() }
+                    }
                     "show_preview" -> {
                         showPreview = value.toBoolean()
                         AppPreferences.setShowPreview(this, showPreview)
@@ -393,6 +423,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             getFlashlightEnabled = { flashlightEnabled },
             getNightModeEnabled = { nightModeEnabled },
             getForceSoftware = { forceSoftware },
+            getBitrateKbps = { bitrateKbps },
+            getActiveBitrateKbps = { activeBitrateKbps },
+            getVideoFps = { videoFps },
+            getKeyframeIntervalSeconds = { keyframeIntervalSeconds },
             getShowPreview = { showPreview },
             getDetectionEnabled = { detectionEnabled },
             getMotionDetectionEnabled = { motionDetectionEnabled },
@@ -673,6 +707,15 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
         applyForegroundServiceType()
 
+        // Encoder tuning is read straight from preferences rather than from Intent
+        // extras. Both writers -- the app's advanced section and the dashboard's
+        // /action/set-setting -- persist before asking for a restart, so preferences are
+        // the single source, and adding three more extras to every start Intent would
+        // only give the two paths a chance to disagree.
+        val newBitrateKbps = AppPreferences.getBitrateKbps(this)
+        val newVideoFps = AppPreferences.getVideoFps(this)
+        val newKeyframeIntervalSeconds = AppPreferences.getKeyframeIntervalSeconds(this)
+
         // Initialize wrapper if needed
         if (!::rtspServerCamera.isInitialized) {
              rtspServerCamera = RtspServerCamera2(openGlView, this, 8554)
@@ -680,7 +723,14 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
         // If already streaming, check if we need to restart due to config change
         if (rtspServerCamera.isStreaming) {
-            if (videoCodec != newVideoCodec || videoWidth != newWidth || videoHeight != newHeight || forceSoftware != newForceSoftware) {
+            val encoderChanged = videoCodec != newVideoCodec ||
+                videoWidth != newWidth ||
+                videoHeight != newHeight ||
+                forceSoftware != newForceSoftware ||
+                bitrateKbps != newBitrateKbps ||
+                videoFps != newVideoFps ||
+                keyframeIntervalSeconds != newKeyframeIntervalSeconds
+            if (encoderChanged) {
                 rtspServerCamera.stopStream()
             } else {
                 if (showPreview != newShowPreview) {
@@ -711,6 +761,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         videoWidth = newWidth
         videoHeight = newHeight
         forceSoftware = newForceSoftware
+        bitrateKbps = newBitrateKbps
+        videoFps = newVideoFps
+        keyframeIntervalSeconds = newKeyframeIntervalSeconds
         
         // Persist the settings
         AppPreferences.setVideoCodec(this, videoCodec)
@@ -786,12 +839,18 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     android.util.Log.d("CctvServerService", "Max resolution detected: ${videoWidth}x${videoHeight}")
                 }
 
-                // Dynamic Bitrate Calculation
-                val bitrate = when {
-                    videoWidth >= 1920 -> 6000 * 1024
-                    videoWidth >= 1280 -> 4000 * 1024
-                    else -> 2000 * 1024
-                }
+                // Bitrate, frame rate and keyframe interval all live in EncoderProfile
+                // so the arithmetic is unit tested rather than inlined here. Passing
+                // videoCodec in matters: H.265 and AV1 reach the same picture at a
+                // noticeably lower bitrate than H.264.
+                val resolvedKbps = EncoderProfile.resolveBitrateKbps(
+                    width = videoWidth,
+                    height = videoHeight,
+                    fps = videoFps,
+                    codec = videoCodec,
+                    manualKbps = bitrateKbps.takeIf { it != AppPreferences.BITRATE_AUTO }
+                )
+                val bitrate = EncoderProfile.kbpsToBps(resolvedKbps)
 
                 // Audio is opt-in. Recording it forces the microphone foreground-service
                 // type and the RECORD_AUDIO grant; a camera-only stream needs neither.
@@ -833,14 +892,36 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     android.util.Log.d("CctvServerService", "RTSP auth disabled")
                 }
 
-                if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
+                // The five-argument overload is (w, h, fps, bitrate, rotation) and
+                // hard-codes a 2 second keyframe interval internally. The six-argument
+                // one takes the interval explicitly -- that extra argument is the whole
+                // reason for switching overloads, so keep the rotation argument last.
+                if (rtspServerCamera.prepareVideo(
+                        videoWidth, videoHeight, videoFps, bitrate, keyframeIntervalSeconds, 0
+                    )
+                ) {
                     rtspServerCamera.startStream()
                     applyTimestampOverlay()
                     activeCodec = videoCodec
+                    activeBitrateKbps = resolvedKbps
                 } else {
                     android.util.Log.w("CctvServerService", "Codec $selectedCodec preparation failed, falling back to H264")
                     rtspServerCamera.setVideoCodec(VideoCodec.H264)
-                    if (rtspServerCamera.prepareVideo(videoWidth, videoHeight, 30, bitrate, 0)) {
+                    // Recompute for H.264: the requested codec may have been given a
+                    // lower bitrate for its better efficiency, and carrying that number
+                    // over would leave the fallback stream visibly starved.
+                    val fallbackKbps = EncoderProfile.resolveBitrateKbps(
+                        width = videoWidth,
+                        height = videoHeight,
+                        fps = videoFps,
+                        codec = "H264",
+                        manualKbps = bitrateKbps.takeIf { it != AppPreferences.BITRATE_AUTO }
+                    )
+                    if (rtspServerCamera.prepareVideo(
+                            videoWidth, videoHeight, videoFps,
+                            EncoderProfile.kbpsToBps(fallbackKbps), keyframeIntervalSeconds, 0
+                        )
+                    ) {
                          rtspServerCamera.startStream()
                          applyTimestampOverlay()
                          // Record that THIS session fell back, but do NOT overwrite the
@@ -849,7 +930,13 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                          // and persisting H264 silently threw away a setting the device
                          // is perfectly capable of honouring on the next attempt.
                          activeCodec = "H264"
+                         activeBitrateKbps = fallbackKbps
                     } else {
+                         // Nothing is streaming, so stop reporting a bitrate as though
+                         // something were. /status feeds the dashboard's "currently N
+                         // kbit/s" line, and leaving the last successful value there
+                         // describes a stream that no longer exists.
+                         activeBitrateKbps = 0
                          android.util.Log.e("CctvServerService", "H264 fallback preparation also failed.")
                     }
                 }
