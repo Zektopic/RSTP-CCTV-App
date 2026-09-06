@@ -92,4 +92,19 @@
     <!-- Events list -->
     <string name="event_snapshot_description">Detection snapshot</string>
     <string name="events_count">%1$d events</string>
+    <!-- Advanced settings (hidden behind a tap gesture on the version row) -->
+    <string name="section_advanced">Advanced</string>
+    <string name="advanced_summary">These settings change how the encoder runs. Defaults match the app\'s normal behaviour — if a stream stops working, use Reset below.</string>
+    <string name="advanced_reset">Reset advanced settings</string>
+    <string name="advanced_reset_done">Advanced settings reset to defaults</string>
+    <string name="advanced_hide">Hide advanced settings</string>
+    <string name="advanced_hidden">Advanced settings hidden</string>
+    <string name="advanced_unlocked">Advanced settings unlocked</string>
+    <string name="advanced_already_unlocked">Advanced settings are already unlocked</string>
+    <plurals name="advanced_countdown">
+        <item quantity="one">%1$d tap away from the advanced settings</item>
+        <item quantity="other">%1$d taps away from the advanced settings</item>
+    </plurals>
+    <string name="version_row">Version %1$s</string>
+    <string name="force_software_codec_summary">Use the device\'s software encoder instead of the hardware one. Slower and hotter, but a way out when a hardware encoder produces a broken stream.</string>
 </resources>

@@ -264,4 +264,41 @@ object AppPreferences {
     fun setAutoStartOnLaunch(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_AUTO_START_ON_LAUNCH, enabled).apply()
     }
+
+    // --- Advanced settings ---
+    private const val KEY_ADVANCED_UNLOCKED = "advanced_unlocked"
+
+    /**
+     * Whether the hidden Advanced section is revealed in the app UI.
+     *
+     * This gates *visibility only*, never behaviour. Every advanced setting has a
+     * default that reproduces the previous hard-coded value, so a locked install and a
+     * freshly unlocked one stream identically until something is actually changed.
+     */
+    fun getAdvancedUnlocked(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ADVANCED_UNLOCKED, false)
+
+    fun setAdvancedUnlocked(context: Context, unlocked: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ADVANCED_UNLOCKED, unlocked).apply()
+    }
+
+    /**
+     * Clears every advanced tuning value so the app returns to its stock behaviour.
+     *
+     * Deliberately leaves [KEY_ADVANCED_UNLOCKED] alone: a user who resets a bad encoder
+     * setting almost certainly still wants the section they reset it from.
+     */
+    fun resetAdvancedSettings(context: Context) {
+        val editor = prefs(context).edit()
+        ADVANCED_KEYS.forEach { editor.remove(it) }
+        editor.apply()
+    }
+
+    /**
+     * Every key [resetAdvancedSettings] clears. Kept as one list so a new advanced
+     * setting cannot be added without a deliberate decision about the reset path.
+     */
+    private val ADVANCED_KEYS = listOf(
+        KEY_FORCE_SOFTWARE
+    )
 }

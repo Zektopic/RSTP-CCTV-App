@@ -164,15 +164,6 @@
                         tools:ignore="LabelFor" />
                 </com.google.android.material.textfield.TextInputLayout>
 
-                <!-- Force Software Codec -->
-                <com.google.android.material.materialswitch.MaterialSwitch
-                    android:id="@+id/switch_force_software"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:text="@string/force_software_codec"
-                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
-
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -548,6 +539,74 @@
         </com.google.android.material.card.MaterialCardView>
 
         <!-- ═══════════════════════════════════════ -->
+        <!-- Advanced Card (hidden until unlocked)   -->
+        <!-- ═══════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_advanced"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:contentPadding="20dp"
+            tools:visibility="visible">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/section_advanced"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                    android:textColor="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/advanced_summary"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
+
+                <!-- Software encoder. Lives here rather than in Video Settings: it is a
+                     recovery lever for a broken hardware encoder, not a routine choice. -->
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_force_software"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/force_software_codec"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:text="@string/force_software_codec_summary"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_reset_advanced"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/advanced_reset" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_hide_advanced"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/advanced_hide" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ═══════════════════════════════════════ -->
         <!-- Network Info Card                       -->
         <!-- ═══════════════════════════════════════ -->
         <com.google.android.material.card.MaterialCardView
@@ -659,6 +718,19 @@
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
+
+        <!-- Version row. Tapping it repeatedly reveals the Advanced card above. -->
+        <TextView
+            android:id="@+id/text_version"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:paddingVertical="12dp"
+            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+            tools:text="Version 1.1.0" />
 
     </LinearLayout>
     </ScrollView>
