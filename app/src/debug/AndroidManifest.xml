@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Debug-only overlay so the instrumented tests can reach their own loopback server.
+      tools:replace is required because the main manifest's <application> already exists;
+      without it the merger refuses to add the attribute.
+    -->
+    <application
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:replace="android:networkSecurityConfig" />
+
+</manifest>

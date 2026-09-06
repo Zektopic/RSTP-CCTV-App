@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      Debug builds only.
+
+      WebServerAuthInstrumentedTest drives a real WebServer over a real socket, so its
+      HTTP client talks to 127.0.0.1 in the clear. Since API 28 that is blocked by
+      default, and all ten of those tests failed on-device with
+      "Cleartext HTTP traffic to 127.0.0.1 not permitted". CI only ever ran
+      assembleDebugAndroidTest, which compiles the suite without running it, so nothing
+      noticed.
+
+      Scoped as narrowly as possible: loopback only, debug source set only. The release
+      build keeps the platform default. This does not affect the dashboard itself, where
+      the app is the server; cleartext policy governs outgoing connections, not
+      incoming ones.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>
