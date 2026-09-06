@@ -33,6 +33,12 @@ class WebServer(
     private val getFlashlightEnabled: () -> Boolean,
     private val getNightModeEnabled: () -> Boolean,
     private val getForceSoftware: () -> Boolean,
+    /** Hand-pinned bitrate in kbit/s, or 0 for auto. */
+    private val getBitrateKbps: () -> Int,
+    /** What the encoder was actually prepared with, which is what auto resolved to. */
+    private val getActiveBitrateKbps: () -> Int,
+    private val getVideoFps: () -> Int,
+    private val getKeyframeIntervalSeconds: () -> Int,
     private val getShowPreview: () -> Boolean,
     private val getDetectionEnabled: () -> Boolean,
     private val getMotionDetectionEnabled: () -> Boolean,
@@ -244,6 +250,10 @@ class WebServer(
                 "flashlightEnabled":${getFlashlightEnabled()},
                 "nightModeEnabled":${getNightModeEnabled()},
                 "forceSoftware":${getForceSoftware()},
+                "bitrateKbps":${getBitrateKbps()},
+                "activeBitrateKbps":${getActiveBitrateKbps()},
+                "videoFps":${getVideoFps()},
+                "keyframeIntervalSeconds":${getKeyframeIntervalSeconds()},
                 "showPreview":${getShowPreview()},
                 "detectionEnabled":${getDetectionEnabled()},
                 "motionDetectionEnabled":${getMotionDetectionEnabled()},
@@ -492,6 +502,12 @@ class WebServer(
             padding: 10px 0;
         }
         .setting-row + .setting-row { border-top: 1px solid var(--border); }
+        .advanced-summary {
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            list-style: revert;
+        }
         .setting-label {
             font-size: 14px;
             font-weight: 500;
@@ -739,6 +755,63 @@ class WebServer(
             </div>
         </div>
 
+        <!-- Encoder tuning. Collapsed by default for the same reason the app hides its
+             Advanced section: these change how the encoder is prepared and a bad value
+             can leave a device unable to start a stream at all. -->
+        <div class="settings-card">
+            <details>
+                <summary class="advanced-summary">Encoder Tuning (Advanced)</summary>
+                <div class="setting-row">
+                    <div>
+                        <span class="setting-label">Bitrate</span>
+                        <div class="setting-sublabel" id="bitrateSublabel">Auto</div>
+                    </div>
+                    <div class="select-wrap">
+                        <select id="bitrateSelect" onchange="setSetting('bitrate_kbps', this.value)">
+                            <option value="0">Auto</option>
+                            <option value="1000">1 Mbit/s</option>
+                            <option value="2000">2 Mbit/s</option>
+                            <option value="4000">4 Mbit/s</option>
+                            <option value="6000">6 Mbit/s</option>
+                            <option value="8000">8 Mbit/s</option>
+                            <option value="12000">12 Mbit/s</option>
+                            <option value="20000">20 Mbit/s</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <span class="setting-label">Frame rate</span>
+                        <div class="setting-sublabel">Lower frame rates cut bitrate, heat and battery drain</div>
+                    </div>
+                    <div class="select-wrap">
+                        <select id="fpsSelect" onchange="setSetting('video_fps', this.value)">
+                            <option value="10">10 fps</option>
+                            <option value="15">15 fps</option>
+                            <option value="20">20 fps</option>
+                            <option value="24">24 fps</option>
+                            <option value="30">30 fps</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <span class="setting-label">Keyframe interval</span>
+                        <div class="setting-sublabel">Shorter means players start faster and recover from loss sooner, at a bandwidth cost</div>
+                    </div>
+                    <div class="select-wrap">
+                        <select id="keyframeSelect" onchange="setSetting('keyframe_interval_seconds', this.value)">
+                            <option value="1">1 s</option>
+                            <option value="2">2 s</option>
+                            <option value="3">3 s</option>
+                            <option value="5">5 s</option>
+                            <option value="10">10 s</option>
+                        </select>
+                    </div>
+                </div>
+            </details>
+        </div>
+
         <!-- Overlay Settings -->
         <div class="settings-card">
             <h3>Overlay</h3>
@@ -942,6 +1015,15 @@ class WebServer(
                     
                     // Sync toggles
                     document.getElementById('toggleForceSoftware').checked = data.forceSoftware;
+                    document.getElementById('bitrateSelect').value = data.bitrateKbps;
+                    document.getElementById('fpsSelect').value = data.videoFps;
+                    document.getElementById('keyframeSelect').value = data.keyframeIntervalSeconds;
+                    // On Auto the picked number is the only interesting part, so show
+                    // what the encoder actually got rather than the word "Auto" twice.
+                    document.getElementById('bitrateSublabel').textContent =
+                        data.bitrateKbps === 0
+                            ? 'Auto — currently ' + (data.activeBitrateKbps || '?') + ' kbit/s'
+                            : 'Pinned to ' + data.bitrateKbps + ' kbit/s';
                     document.getElementById('togglePreview').checked = data.showPreview;
                     document.getElementById('toggleTimestamp').checked = data.showTimestamp;
                     document.getElementById('toggleDate').checked = data.showDate;

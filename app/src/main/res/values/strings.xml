@@ -107,4 +107,16 @@
     </plurals>
     <string name="version_row">Version %1$s</string>
     <string name="force_software_codec_summary">Use the device\'s software encoder instead of the hardware one. Slower and hotter, but a way out when a hardware encoder produces a broken stream.</string>
+    <!-- Encoder tuning -->
+    <string name="encoder_bitrate">Bitrate</string>
+    <string name="encoder_bitrate_auto">Auto</string>
+    <string name="encoder_bitrate_auto_summary">Derived from resolution, frame rate and codec. Currently %1$d kbit/s.</string>
+    <string name="encoder_bitrate_manual_summary">Pinned to %1$d kbit/s.</string>
+    <string name="encoder_bitrate_manual_value">%1$d kbit/s</string>
+    <string name="encoder_fps">Frame rate</string>
+    <string name="encoder_fps_summary">Lower frame rates cut bitrate, heat and battery drain. 30 fps is the default.</string>
+    <string name="encoder_fps_value">%1$d fps</string>
+    <string name="encoder_keyframe">Keyframe interval</string>
+    <string name="encoder_keyframe_summary">Shorter means players start faster and recover from packet loss sooner, at a bandwidth cost. 2 seconds is the default.</string>
+    <string name="encoder_keyframe_label">Keyframe interval: %1$d s</string>
 </resources>

@@ -52,6 +52,15 @@ class MainActivity : AppCompatActivity() {
     private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
     private val overlaySizes = arrayOf("Small", "Medium", "Large")
 
+    /**
+     * Bitrate choices for the advanced picker, in kbit/s.
+     *
+     * [AppPreferences.BITRATE_AUTO] leads, so the default sits at the top of the list
+     * and a user who opens the dropdown out of curiosity sees where they already are.
+     */
+    private val bitrateChoicesKbps =
+        intArrayOf(AppPreferences.BITRATE_AUTO, 1000, 2000, 4000, 6000, 8000, 12000, 20000)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -80,6 +89,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun setupAdvancedSection() {
         binding.textVersion.text = getString(R.string.version_row, versionName())
+        loadAdvancedSettings()
         setAdvancedVisible(AppPreferences.getAdvancedUnlocked(this))
 
         binding.textVersion.setOnClickListener {
@@ -136,12 +146,73 @@ class MainActivity : AppCompatActivity() {
         "?"
     }
 
-    /** Reflects the persisted advanced values back into their controls. */
+    /**
+     * Reflects the persisted advanced values back into their controls.
+     *
+     * Listeners are detached around every write. "Reset advanced settings" calls this,
+     * and setting a control while its listener is attached would fire another save and
+     * another stream restart for each one.
+     */
     private fun loadAdvancedSettings() {
         binding.switchForceSoftware.setOnCheckedChangeListener(null)
         binding.switchForceSoftware.isChecked = AppPreferences.getForceSoftware(this)
         binding.switchForceSoftware.setOnCheckedChangeListener(forceSoftwareListener)
+
+        val bitrate = AppPreferences.getBitrateKbps(this)
+        (binding.spinnerBitrate as? AutoCompleteTextView)?.setText(bitrateLabel(bitrate), false)
+        updateBitrateSummary(bitrate)
+
+        val fps = AppPreferences.getVideoFps(this)
+        (binding.spinnerFps as? AutoCompleteTextView)?.setText(
+            getString(R.string.encoder_fps_value, fps), false
+        )
+
+        val keyframe = AppPreferences.getKeyframeIntervalSeconds(this)
+        binding.sliderKeyframe.clearOnChangeListeners()
+        binding.sliderKeyframe.value = keyframe.toFloat()
+        binding.sliderKeyframe.addOnChangeListener(keyframeListener)
+        binding.labelKeyframe.text = getString(R.string.encoder_keyframe_label, keyframe)
     }
+
+    /**
+     * Explains what the bitrate setting currently means.
+     *
+     * On Auto the interesting number is what the ladder resolved to, so it is computed
+     * here from the same [EncoderProfile] the service uses rather than left as the word
+     * "Auto", which tells the user nothing about the bandwidth they are about to use.
+     */
+    private fun updateBitrateSummary(kbps: Int) {
+        binding.labelBitrateSummary.text = if (kbps == AppPreferences.BITRATE_AUTO) {
+            var width = AppPreferences.getVideoWidth(this)
+            var height = AppPreferences.getVideoHeight(this)
+            // "Max" is stored as 0x0 and only resolved against the camera inside the
+            // service. Show the 1080p figure rather than the degenerate zero case.
+            if (width == 0 || height == 0) {
+                width = 1920
+                height = 1080
+            }
+            getString(
+                R.string.encoder_bitrate_auto_summary,
+                EncoderProfile.autoBitrateKbps(
+                    width = width,
+                    height = height,
+                    fps = AppPreferences.getVideoFps(this),
+                    codec = AppPreferences.getVideoCodec(this)
+                )
+            )
+        } else {
+            getString(R.string.encoder_bitrate_manual_summary, kbps)
+        }
+    }
+
+    private val keyframeListener =
+        com.google.android.material.slider.Slider.OnChangeListener { _, value, fromUser ->
+            val seconds = value.toInt()
+            binding.labelKeyframe.text = getString(R.string.encoder_keyframe_label, seconds)
+            if (!fromUser) return@OnChangeListener
+            AppPreferences.setKeyframeIntervalSeconds(this, seconds)
+            restartServer()
+        }
 
     private fun setAdvancedVisible(visible: Boolean) {
         binding.cardAdvanced.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
@@ -167,7 +238,30 @@ class MainActivity : AppCompatActivity() {
         (binding.spinnerOverlaySize as? AutoCompleteTextView)?.setAdapter(
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, overlaySizes)
         )
+
+        (binding.spinnerBitrate as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                bitrateChoicesKbps.map { bitrateLabel(it) }
+            )
+        )
+
+        (binding.spinnerFps as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                EncoderProfile.FPS_CHOICES.map { getString(R.string.encoder_fps_value, it) }
+            )
+        )
     }
+
+    private fun bitrateLabel(kbps: Int): String =
+        if (kbps == AppPreferences.BITRATE_AUTO) {
+            getString(R.string.encoder_bitrate_auto)
+        } else {
+            getString(R.string.encoder_bitrate_manual_value, kbps)
+        }
 
     private fun loadSavedSettings() {
         // Load saved codec
@@ -279,6 +373,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.switchForceSoftware.setOnCheckedChangeListener(forceSoftwareListener)
+
+        (binding.spinnerBitrate as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            val kbps = bitrateChoicesKbps[position]
+            AppPreferences.setBitrateKbps(this, kbps)
+            updateBitrateSummary(kbps)
+            restartServer()
+        }
+
+        (binding.spinnerFps as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            AppPreferences.setVideoFps(this, EncoderProfile.FPS_CHOICES[position])
+            // The auto bitrate scales with frame rate, so the summary above it is now stale.
+            updateBitrateSummary(AppPreferences.getBitrateKbps(this))
+            restartServer()
+        }
+
+        binding.sliderKeyframe.addOnChangeListener(keyframeListener)
 
         (binding.spinnerResolution as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
             val (width, height) = parseResolution(resolutions[position])

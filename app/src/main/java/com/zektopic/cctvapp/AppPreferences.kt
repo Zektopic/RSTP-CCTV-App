@@ -265,6 +265,61 @@ object AppPreferences {
         prefs(context).edit().putBoolean(KEY_AUTO_START_ON_LAUNCH, enabled).apply()
     }
 
+    // --- Encoder tuning (advanced) ---
+    private const val KEY_BITRATE_KBPS = "bitrate_kbps"
+    private const val KEY_VIDEO_FPS = "video_fps"
+    private const val KEY_KEYFRAME_INTERVAL_SECONDS = "keyframe_interval_seconds"
+
+    /** Stored value meaning "let [EncoderProfile] pick from the resolution and codec". */
+    const val BITRATE_AUTO = 0
+
+    /**
+     * Hand-pinned bitrate in kbit/s, or [BITRATE_AUTO].
+     *
+     * Auto is the default, so an install that never opens the advanced section keeps
+     * getting a bitrate derived from what it is actually streaming.
+     */
+    fun getBitrateKbps(context: Context): Int {
+        val stored = prefs(context).getInt(KEY_BITRATE_KBPS, BITRATE_AUTO)
+        if (stored == BITRATE_AUTO) return BITRATE_AUTO
+        return stored.coerceIn(EncoderProfile.MIN_BITRATE_KBPS, EncoderProfile.MAX_BITRATE_KBPS)
+    }
+
+    fun setBitrateKbps(context: Context, kbps: Int) {
+        val value = if (kbps == BITRATE_AUTO) {
+            BITRATE_AUTO
+        } else {
+            kbps.coerceIn(EncoderProfile.MIN_BITRATE_KBPS, EncoderProfile.MAX_BITRATE_KBPS)
+        }
+        prefs(context).edit().putInt(KEY_BITRATE_KBPS, value).apply()
+    }
+
+    fun getVideoFps(context: Context): Int =
+        EncoderProfile.sanitizeFps(
+            prefs(context).getInt(KEY_VIDEO_FPS, EncoderProfile.DEFAULT_FPS)
+        )
+
+    fun setVideoFps(context: Context, fps: Int) {
+        prefs(context).edit().putInt(KEY_VIDEO_FPS, EncoderProfile.sanitizeFps(fps)).apply()
+    }
+
+    fun getKeyframeIntervalSeconds(context: Context): Int =
+        EncoderProfile.sanitizeKeyframeIntervalSeconds(
+            prefs(context).getInt(
+                KEY_KEYFRAME_INTERVAL_SECONDS,
+                EncoderProfile.DEFAULT_KEYFRAME_INTERVAL_SECONDS
+            )
+        )
+
+    fun setKeyframeIntervalSeconds(context: Context, seconds: Int) {
+        prefs(context).edit()
+            .putInt(
+                KEY_KEYFRAME_INTERVAL_SECONDS,
+                EncoderProfile.sanitizeKeyframeIntervalSeconds(seconds)
+            )
+            .apply()
+    }
+
     // --- Advanced settings ---
     private const val KEY_ADVANCED_UNLOCKED = "advanced_unlocked"
 
@@ -299,6 +354,9 @@ object AppPreferences {
      * setting cannot be added without a deliberate decision about the reset path.
      */
     private val ADVANCED_KEYS = listOf(
-        KEY_FORCE_SOFTWARE
+        KEY_FORCE_SOFTWARE,
+        KEY_BITRATE_KBPS,
+        KEY_VIDEO_FPS,
+        KEY_KEYFRAME_INTERVAL_SECONDS
     )
 }
