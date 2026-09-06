@@ -51,18 +51,11 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         private const val CHANNEL_ID = "CctvServerChannel"
         const val ACTION_STOP_SERVER = "ACTION_STOP_SERVER"
 
-        /** Capture cadence while detection is on or the dashboard is open. */
-        private const val ACTIVE_SNAPSHOT_INTERVAL_MS = 500L
-        /** Heartbeat while nothing needs frames -- just enough to notice a new viewer. */
-        private const val IDLE_SNAPSHOT_INTERVAL_MS = 3000L
         /** How often the thermal/battery policy is re-evaluated. */
         private const val ADAPTIVE_REEVALUATION_INTERVAL_MS = 60_000L
 
         /** How long after the last /shot.jpg we keep treating a viewer as present. */
         private const val VIEWER_IDLE_TIMEOUT_MS = 10_000L
-
-        /** Width the detection pipeline downsamples frames to before analysis. */
-        private const val ANALYSIS_TARGET_WIDTH = 640
 
         /** COCO labels treated as an "animal" event. */
         private val ANIMAL_LABELS = setOf("cat", "dog", "bird", "horse", "sheep", "cow")
@@ -100,6 +93,12 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     /** The bitrate the encoder was last prepared with, for /status. */
     @Volatile private var activeBitrateKbps = 0
     @Volatile private var adaptiveQualityEnabled = false
+    // Capture pipeline tuning. These were private constants; the values below are the
+    // constants' own values, so nothing changes until a user changes it.
+    @Volatile private var activeSnapshotIntervalMs = CaptureProfile.DEFAULT_ACTIVE_INTERVAL_MS
+    @Volatile private var idleSnapshotIntervalMs = CaptureProfile.DEFAULT_IDLE_INTERVAL_MS
+    @Volatile private var analysisWidth = CaptureProfile.DEFAULT_ANALYSIS_WIDTH
+    @Volatile private var snapshotJpegQuality = CaptureProfile.DEFAULT_JPEG_QUALITY
     /** The most recent thermal reading; always NONE below API 29, which has no API. */
     @Volatile private var thermalStatus = AdaptiveQuality.THERMAL_NONE
     /** What the adaptive policy last decided, surfaced in /status so the UI can say why. */
@@ -211,11 +210,11 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             if (wanted) takeSnapshot()
 
             val interval = when {
-                !wanted -> IDLE_SNAPSHOT_INTERVAL_MS
-                throttled -> IDLE_SNAPSHOT_INTERVAL_MS
-                else -> ACTIVE_SNAPSHOT_INTERVAL_MS
+                !wanted -> idleSnapshotIntervalMs
+                throttled -> idleSnapshotIntervalMs
+                else -> activeSnapshotIntervalMs
             }
-            snapshotHandler.postDelayed(this, interval)
+            snapshotHandler.postDelayed(this, interval.toLong())
         }
     }
 
@@ -235,6 +234,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         videoHeight = AppPreferences.getVideoHeight(this)
         encoderImplementation = AppPreferences.getEncoderImplementation(this)
         adaptiveQualityEnabled = AppPreferences.getAdaptiveQualityEnabled(this)
+        loadCaptureProfile()
         startThermalMonitoring()
         codecSupport = CodecCapabilities.probe()
         android.util.Log.d("CctvServerService", "Encoder support: $codecSupport")
@@ -403,6 +403,32 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                         encoderImplementation = AppPreferences.getEncoderImplementation(this)
                         onMain { restartStreamIfRunning() }
                     }
+                    // Capture pipeline. None of these touch the encoder, so none of
+                    // them restart the stream -- the next tick simply uses the new value.
+                    "active_snapshot_interval_ms" -> {
+                        AppPreferences.setActiveSnapshotIntervalMs(
+                            this, value.toIntOrNull() ?: CaptureProfile.DEFAULT_ACTIVE_INTERVAL_MS
+                        )
+                        loadCaptureProfile()
+                    }
+                    "idle_snapshot_interval_ms" -> {
+                        AppPreferences.setIdleSnapshotIntervalMs(
+                            this, value.toIntOrNull() ?: CaptureProfile.DEFAULT_IDLE_INTERVAL_MS
+                        )
+                        loadCaptureProfile()
+                    }
+                    "analysis_width" -> {
+                        AppPreferences.setAnalysisWidth(
+                            this, value.toIntOrNull() ?: CaptureProfile.DEFAULT_ANALYSIS_WIDTH
+                        )
+                        loadCaptureProfile()
+                    }
+                    "snapshot_jpeg_quality" -> {
+                        AppPreferences.setSnapshotJpegQuality(
+                            this, value.toIntOrNull() ?: CaptureProfile.DEFAULT_JPEG_QUALITY
+                        )
+                        loadCaptureProfile()
+                    }
                     "adaptive_quality_enabled" -> {
                         adaptiveQualityEnabled = value.toBoolean()
                         AppPreferences.setAdaptiveQualityEnabled(this, adaptiveQualityEnabled)
@@ -499,6 +525,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             getThermalStatus = { thermalStatus },
             getQualityScalePercent = { qualityPlan.bitrateScalePercent },
             getQualityTrigger = { qualityPlan.trigger.name },
+            getActiveSnapshotIntervalMs = { activeSnapshotIntervalMs },
+            getIdleSnapshotIntervalMs = { idleSnapshotIntervalMs },
+            getAnalysisWidth = { analysisWidth },
+            getSnapshotJpegQuality = { snapshotJpegQuality },
             getBitrateKbps = { bitrateKbps },
             getActiveBitrateKbps = { activeBitrateKbps },
             getVideoFps = { videoFps },
@@ -541,6 +571,13 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         snapshotHandler.post(snapshotRunnable)
         retentionHandler.post(retentionRunnable)
         adaptiveHandler.post(adaptiveRunnable)
+    }
+
+    private fun loadCaptureProfile() {
+        activeSnapshotIntervalMs = AppPreferences.getActiveSnapshotIntervalMs(this)
+        idleSnapshotIntervalMs = AppPreferences.getIdleSnapshotIntervalMs(this)
+        analysisWidth = AppPreferences.getAnalysisWidth(this)
+        snapshotJpegQuality = AppPreferences.getSnapshotJpegQuality(this)
     }
 
     /**
@@ -722,7 +759,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         try {
             openGlView.takePhoto { bitmap -> 
                 val stream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 50, stream)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, snapshotJpegQuality, stream)
                 val jpeg = stream.toByteArray()
                 currentSnapshot.set(jpeg)
                 runDetectionPipelineIfEnabled(jpeg)
@@ -747,12 +784,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
 
-        var sampleSize = 1
-        while (bounds.outWidth / (sampleSize * 2) >= ANALYSIS_TARGET_WIDTH) {
-            sampleSize *= 2
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = CaptureProfile.sampleSizeFor(bounds.outWidth, analysisWidth)
         }
-
-        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
         return BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, options)
     }
 

@@ -379,6 +379,67 @@ object AppPreferences {
         prefs(context).edit().putBoolean(KEY_ADAPTIVE_QUALITY, enabled).apply()
     }
 
+    // --- Capture pipeline (advanced) ---
+    private const val KEY_ACTIVE_SNAPSHOT_INTERVAL_MS = "active_snapshot_interval_ms"
+    private const val KEY_IDLE_SNAPSHOT_INTERVAL_MS = "idle_snapshot_interval_ms"
+    private const val KEY_ANALYSIS_WIDTH = "analysis_width"
+    private const val KEY_SNAPSHOT_JPEG_QUALITY = "snapshot_jpeg_quality"
+
+    fun getActiveSnapshotIntervalMs(context: Context): Int =
+        CaptureProfile.sanitizeActiveIntervalMs(
+            prefs(context).getInt(
+                KEY_ACTIVE_SNAPSHOT_INTERVAL_MS,
+                CaptureProfile.DEFAULT_ACTIVE_INTERVAL_MS
+            )
+        )
+
+    fun setActiveSnapshotIntervalMs(context: Context, ms: Int) {
+        prefs(context).edit()
+            .putInt(KEY_ACTIVE_SNAPSHOT_INTERVAL_MS, CaptureProfile.sanitizeActiveIntervalMs(ms))
+            .apply()
+    }
+
+    /** Clamped against the active interval, which must never be the slower of the two. */
+    fun getIdleSnapshotIntervalMs(context: Context): Int =
+        CaptureProfile.sanitizeIdleIntervalMs(
+            prefs(context).getInt(
+                KEY_IDLE_SNAPSHOT_INTERVAL_MS,
+                CaptureProfile.DEFAULT_IDLE_INTERVAL_MS
+            ),
+            getActiveSnapshotIntervalMs(context)
+        )
+
+    fun setIdleSnapshotIntervalMs(context: Context, ms: Int) {
+        prefs(context).edit()
+            .putInt(
+                KEY_IDLE_SNAPSHOT_INTERVAL_MS,
+                CaptureProfile.sanitizeIdleIntervalMs(ms, getActiveSnapshotIntervalMs(context))
+            )
+            .apply()
+    }
+
+    fun getAnalysisWidth(context: Context): Int =
+        CaptureProfile.sanitizeAnalysisWidth(
+            prefs(context).getInt(KEY_ANALYSIS_WIDTH, CaptureProfile.DEFAULT_ANALYSIS_WIDTH)
+        )
+
+    fun setAnalysisWidth(context: Context, width: Int) {
+        prefs(context).edit()
+            .putInt(KEY_ANALYSIS_WIDTH, CaptureProfile.sanitizeAnalysisWidth(width))
+            .apply()
+    }
+
+    fun getSnapshotJpegQuality(context: Context): Int =
+        CaptureProfile.sanitizeJpegQuality(
+            prefs(context).getInt(KEY_SNAPSHOT_JPEG_QUALITY, CaptureProfile.DEFAULT_JPEG_QUALITY)
+        )
+
+    fun setSnapshotJpegQuality(context: Context, quality: Int) {
+        prefs(context).edit()
+            .putInt(KEY_SNAPSHOT_JPEG_QUALITY, CaptureProfile.sanitizeJpegQuality(quality))
+            .apply()
+    }
+
     // --- Advanced settings ---
     private const val KEY_ADVANCED_UNLOCKED = "advanced_unlocked"
 
@@ -418,6 +479,10 @@ object AppPreferences {
         KEY_BITRATE_KBPS,
         KEY_VIDEO_FPS,
         KEY_KEYFRAME_INTERVAL_SECONDS,
-        KEY_ADAPTIVE_QUALITY
+        KEY_ADAPTIVE_QUALITY,
+        KEY_ACTIVE_SNAPSHOT_INTERVAL_MS,
+        KEY_IDLE_SNAPSHOT_INTERVAL_MS,
+        KEY_ANALYSIS_WIDTH,
+        KEY_SNAPSHOT_JPEG_QUALITY
     )
 }

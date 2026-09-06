@@ -137,4 +137,17 @@
     <string name="adaptive_quality">Adapt to heat and battery</string>
     <string name="adaptive_quality_summary">Off by default: a fixed camera is expected to run hot, and may be running other work too. Turn this on only if the stream itself stutters — it trades bitrate for stability once the system starts throttling.</string>
     <string name="adaptive_quality_note_pre_q">This device runs Android %1$s, which has no thermal API. Only the low-battery half of this setting applies.</string>
+    <!-- Capture pipeline -->
+    <string name="capture_section">Capture and detection</string>
+    <string name="capture_interval">Capture interval</string>
+    <string name="capture_interval_summary">How often a frame is grabbed while detection is on or someone is watching the dashboard. This loop is the biggest battery cost in the app.</string>
+    <string name="capture_idle_interval">Idle heartbeat</string>
+    <string name="capture_idle_interval_summary">How often a frame is grabbed when nothing wants one. Never faster than the capture interval above.</string>
+    <string name="capture_analysis_width">Analysis width</string>
+    <string name="capture_analysis_width_summary">Frames are shrunk to this before detection. Smaller is cheaper, but below 320 px the detector starts missing small or distant subjects.</string>
+    <string name="capture_jpeg_quality">Snapshot quality</string>
+    <string name="capture_jpeg_quality_summary">JPEG quality for the dashboard preview, stored event images and the detector input.</string>
+    <string name="capture_per_second">%1$d per second</string>
+    <string name="capture_every_seconds">Every %1$d s</string>
+    <string name="capture_pixels">%1$d px</string>
 </resources>

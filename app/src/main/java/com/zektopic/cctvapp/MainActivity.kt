@@ -63,6 +63,12 @@ class MainActivity : AppCompatActivity() {
             sendSettingToService("adaptive_quality_enabled", isChecked.toString())
         }
 
+    // Capture pipeline choices, in the order their pickers show them.
+    private val captureIntervalsMs = intArrayOf(250, 500, 1000, 2000, 5000)
+    private val idleIntervalsMs = intArrayOf(1000, 3000, 10000, 30000)
+    private val analysisWidths = intArrayOf(320, 480, 640, 1280)
+    private val jpegQualities = intArrayOf(30, 50, 70, 90)
+
     /** Encoder implementations, in the order the picker shows them. */
     private val encoderImplementations = EncoderImplementation.entries.toList()
 
@@ -177,7 +183,39 @@ class MainActivity : AppCompatActivity() {
         binding.switchAdaptiveQuality.setOnCheckedChangeListener(null)
         binding.switchAdaptiveQuality.isChecked = AppPreferences.getAdaptiveQualityEnabled(this)
         binding.switchAdaptiveQuality.setOnCheckedChangeListener(adaptiveQualityListener)
+
+        // None of these touch the encoder, so none of them restart the stream -- the
+        // service picks the new value up on its next capture tick.
+        (binding.spinnerCaptureInterval as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            val ms = captureIntervalsMs[position]
+            AppPreferences.setActiveSnapshotIntervalMs(this, ms)
+            sendSettingToService("active_snapshot_interval_ms", ms.toString())
+            // The idle heartbeat is clamped to never be faster than this, so it may have
+            // just been pushed out from under the user. Re-read rather than leave a
+            // picker showing a value that is no longer in effect.
+            loadCaptureSettings()
+        }
+
+        (binding.spinnerIdleInterval as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            val ms = idleIntervalsMs[position]
+            AppPreferences.setIdleSnapshotIntervalMs(this, ms)
+            sendSettingToService("idle_snapshot_interval_ms", ms.toString())
+            loadCaptureSettings()
+        }
+
+        (binding.spinnerAnalysisWidth as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            val width = analysisWidths[position]
+            AppPreferences.setAnalysisWidth(this, width)
+            sendSettingToService("analysis_width", width.toString())
+        }
+
+        (binding.spinnerJpegQuality as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            val quality = jpegQualities[position]
+            AppPreferences.setSnapshotJpegQuality(this, quality)
+            sendSettingToService("snapshot_jpeg_quality", quality.toString())
+        }
         updateAdaptiveQualityNote()
+        loadCaptureSettings()
 
         val bitrate = AppPreferences.getBitrateKbps(this)
         (binding.spinnerBitrate as? AutoCompleteTextView)?.setText(bitrateLabel(bitrate), false)
@@ -219,6 +257,28 @@ class MainActivity : AppCompatActivity() {
         binding.labelCodecSupport.text = getString(
             R.string.codec_support_label,
             described.ifEmpty { getString(R.string.codec_support_unknown) }
+        )
+    }
+
+    /**
+     * Writes the persisted capture values into their pickers.
+     *
+     * Reads back through AppPreferences rather than echoing what was just written: the
+     * idle heartbeat is clamped against the capture interval, so the stored value and
+     * the value in force are not always the same number.
+     */
+    private fun loadCaptureSettings() {
+        (binding.spinnerCaptureInterval as? AutoCompleteTextView)?.setText(
+            intervalLabel(AppPreferences.getActiveSnapshotIntervalMs(this)), false
+        )
+        (binding.spinnerIdleInterval as? AutoCompleteTextView)?.setText(
+            intervalLabel(AppPreferences.getIdleSnapshotIntervalMs(this)), false
+        )
+        (binding.spinnerAnalysisWidth as? AutoCompleteTextView)?.setText(
+            getString(R.string.capture_pixels, AppPreferences.getAnalysisWidth(this)), false
+        )
+        (binding.spinnerJpegQuality as? AutoCompleteTextView)?.setText(
+            AppPreferences.getSnapshotJpegQuality(this).toString(), false
         )
     }
 
@@ -314,6 +374,38 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
+        (binding.spinnerCaptureInterval as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                captureIntervalsMs.map { intervalLabel(it) }
+            )
+        )
+
+        (binding.spinnerIdleInterval as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                idleIntervalsMs.map { intervalLabel(it) }
+            )
+        )
+
+        (binding.spinnerAnalysisWidth as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                analysisWidths.map { getString(R.string.capture_pixels, it) }
+            )
+        )
+
+        (binding.spinnerJpegQuality as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                jpegQualities.map { it.toString() }
+            )
+        )
+
         (binding.spinnerBitrate as? AutoCompleteTextView)?.setAdapter(
             ArrayAdapter(
                 this,
@@ -337,6 +429,14 @@ class MainActivity : AppCompatActivity() {
             EncoderImplementation.HARDWARE -> R.string.encoder_impl_hardware
             EncoderImplementation.SOFTWARE -> R.string.encoder_impl_software
             EncoderImplementation.CBR_PRIORITY -> R.string.encoder_impl_cbr
+        }
+
+    /** "4 per second" reads better than "250 ms" for a cadence the user is choosing. */
+    private fun intervalLabel(ms: Int): String =
+        if (ms < 1000) {
+            getString(R.string.capture_per_second, 1000 / ms)
+        } else {
+            getString(R.string.capture_every_seconds, ms / 1000)
         }
 
     private fun bitrateLabel(kbps: Int): String =

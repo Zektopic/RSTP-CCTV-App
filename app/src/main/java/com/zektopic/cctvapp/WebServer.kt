@@ -46,6 +46,10 @@ class WebServer(
     private val getQualityScalePercent: () -> Int,
     /** NONE, THERMAL or BATTERY. */
     private val getQualityTrigger: () -> String,
+    private val getActiveSnapshotIntervalMs: () -> Int,
+    private val getIdleSnapshotIntervalMs: () -> Int,
+    private val getAnalysisWidth: () -> Int,
+    private val getSnapshotJpegQuality: () -> Int,
     /** Hand-pinned bitrate in kbit/s, or 0 for auto. */
     private val getBitrateKbps: () -> Int,
     /** What the encoder was actually prepared with, which is what auto resolved to. */
@@ -270,6 +274,10 @@ class WebServer(
                 "thermalStatus":${getThermalStatus()},
                 "qualityScalePercent":${getQualityScalePercent()},
                 "qualityTrigger":"${getQualityTrigger()}",
+                "activeSnapshotIntervalMs":${getActiveSnapshotIntervalMs()},
+                "idleSnapshotIntervalMs":${getIdleSnapshotIntervalMs()},
+                "analysisWidth":${getAnalysisWidth()},
+                "snapshotJpegQuality":${getSnapshotJpegQuality()},
                 "bitrateKbps":${getBitrateKbps()},
                 "activeBitrateKbps":${getActiveBitrateKbps()},
                 "videoFps":${getVideoFps()},
@@ -852,6 +860,72 @@ class WebServer(
             </details>
         </div>
 
+        <!-- The capture pipeline: the service's own comment calls this "the single
+             biggest battery cost in the app". Collapsed for the same reason as the
+             encoder card. -->
+        <div class="settings-card">
+            <details>
+                <summary class="advanced-summary">Capture &amp; Detection (Advanced)</summary>
+                <div class="setting-row">
+                    <div>
+                        <span class="setting-label">Capture interval</span>
+                        <div class="setting-sublabel">How often a frame is grabbed while detection is on or someone is watching</div>
+                    </div>
+                    <div class="select-wrap">
+                        <select id="activeIntervalSelect" onchange="setSetting('active_snapshot_interval_ms', this.value)">
+                            <option value="250">4 per second</option>
+                            <option value="500">2 per second</option>
+                            <option value="1000">1 per second</option>
+                            <option value="2000">Every 2 s</option>
+                            <option value="5000">Every 5 s</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <span class="setting-label">Idle heartbeat</span>
+                        <div class="setting-sublabel">How often a frame is grabbed when nothing wants one</div>
+                    </div>
+                    <div class="select-wrap">
+                        <select id="idleIntervalSelect" onchange="setSetting('idle_snapshot_interval_ms', this.value)">
+                            <option value="1000">Every 1 s</option>
+                            <option value="3000">Every 3 s</option>
+                            <option value="10000">Every 10 s</option>
+                            <option value="30000">Every 30 s</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <span class="setting-label">Analysis width</span>
+                        <div class="setting-sublabel">Frames are shrunk to this before detection. Smaller is cheaper; below 320 the detector starts missing distant subjects</div>
+                    </div>
+                    <div class="select-wrap">
+                        <select id="analysisWidthSelect" onchange="setSetting('analysis_width', this.value)">
+                            <option value="320">320 px</option>
+                            <option value="480">480 px</option>
+                            <option value="640">640 px</option>
+                            <option value="1280">1280 px</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <span class="setting-label">Snapshot quality</span>
+                        <div class="setting-sublabel">JPEG quality for the preview, stored events and the detector input</div>
+                    </div>
+                    <div class="select-wrap">
+                        <select id="jpegQualitySelect" onchange="setSetting('snapshot_jpeg_quality', this.value)">
+                            <option value="30">30 (smallest)</option>
+                            <option value="50">50</option>
+                            <option value="70">70</option>
+                            <option value="90">90 (best)</option>
+                        </select>
+                    </div>
+                </div>
+            </details>
+        </div>
+
         <!-- Overlay Settings -->
         <div class="settings-card">
             <h3>Overlay</h3>
@@ -1066,6 +1140,10 @@ class WebServer(
                     document.getElementById('codecSupportText').textContent =
                         describeCodecSupport(data.codecSupport);
                     document.getElementById('toggleAdaptive').checked = data.adaptiveQualityEnabled;
+                    document.getElementById('activeIntervalSelect').value = data.activeSnapshotIntervalMs;
+                    document.getElementById('idleIntervalSelect').value = data.idleSnapshotIntervalMs;
+                    document.getElementById('analysisWidthSelect').value = data.analysisWidth;
+                    document.getElementById('jpegQualitySelect').value = data.snapshotJpegQuality;
                     // When the policy is actually holding the stream back, say so here
                     // rather than leaving the user to wonder why the bitrate they picked
                     // is not the bitrate they are getting.
