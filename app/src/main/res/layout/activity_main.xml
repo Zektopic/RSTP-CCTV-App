@@ -678,6 +678,32 @@
                     android:text="@string/encoder_keyframe_summary"
                     android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
 
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_adaptive_quality"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/adaptive_quality"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/adaptive_quality_summary"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
+
+                <TextView
+                    android:id="@+id/label_adaptive_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                    android:textStyle="italic"
+                    android:visibility="gone"
+                    tools:text="This device runs Android 7, which has no thermal API."
+                    tools:visibility="visible" />
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_reset_advanced"
                     style="@style/Widget.Material3.Button.OutlinedButton"

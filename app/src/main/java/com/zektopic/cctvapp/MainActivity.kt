@@ -52,6 +52,17 @@ class MainActivity : AppCompatActivity() {
     private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
     private val overlaySizes = arrayOf("Small", "Medium", "Large")
 
+    /**
+     * Held as a field so [loadAdvancedSettings] can detach it before writing the switch
+     * back to its default, which would otherwise fire another save.
+     */
+    private val adaptiveQualityListener =
+        android.widget.CompoundButton.OnCheckedChangeListener { _, isChecked ->
+            AppPreferences.setAdaptiveQualityEnabled(this, isChecked)
+            // Applied on the fly by the service, so no stream restart is needed.
+            sendSettingToService("adaptive_quality_enabled", isChecked.toString())
+        }
+
     /** Encoder implementations, in the order the picker shows them. */
     private val encoderImplementations = EncoderImplementation.entries.toList()
 
@@ -163,6 +174,11 @@ class MainActivity : AppCompatActivity() {
         )
         updateCodecSupportLabel()
 
+        binding.switchAdaptiveQuality.setOnCheckedChangeListener(null)
+        binding.switchAdaptiveQuality.isChecked = AppPreferences.getAdaptiveQualityEnabled(this)
+        binding.switchAdaptiveQuality.setOnCheckedChangeListener(adaptiveQualityListener)
+        updateAdaptiveQualityNote()
+
         val bitrate = AppPreferences.getBitrateKbps(this)
         (binding.spinnerBitrate as? AutoCompleteTextView)?.setText(bitrateLabel(bitrate), false)
         updateBitrateSummary(bitrate)
@@ -204,6 +220,25 @@ class MainActivity : AppCompatActivity() {
             R.string.codec_support_label,
             described.ifEmpty { getString(R.string.codec_support_unknown) }
         )
+    }
+
+    /**
+     * Warns when half of the adaptive setting cannot work on this device.
+     *
+     * `PowerManager.addThermalStatusListener` is API 29+ and this app supports API 24,
+     * so on an older device the thermal half is a no-op and only the low-battery half
+     * ever fires. Saying so beats a setting that silently does less than it claims.
+     */
+    private fun updateAdaptiveQualityNote() {
+        val preQ = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+        binding.labelAdaptiveNote.visibility =
+            if (preQ) android.view.View.VISIBLE else android.view.View.GONE
+        if (preQ) {
+            binding.labelAdaptiveNote.text = getString(
+                R.string.adaptive_quality_note_pre_q,
+                Build.VERSION.RELEASE ?: Build.VERSION.SDK_INT.toString()
+            )
+        }
     }
 
     /**
@@ -407,6 +442,8 @@ class MainActivity : AppCompatActivity() {
                 startService(intent)
             }
         }
+
+        binding.switchAdaptiveQuality.setOnCheckedChangeListener(adaptiveQualityListener)
 
         (binding.spinnerEncoderImpl as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
             AppPreferences.setEncoderImplementation(this, encoderImplementations[position])

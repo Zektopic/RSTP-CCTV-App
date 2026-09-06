@@ -133,4 +133,8 @@
     <string name="codec_support_both">hardware + software</string>
     <string name="codec_support_entry">%1$s %2$s</string>
     <string name="codec_support_label">This device encodes: %1$s</string>
+    <!-- Adaptive quality -->
+    <string name="adaptive_quality">Adapt to heat and battery</string>
+    <string name="adaptive_quality_summary">Step the bitrate down when the device overheats or the battery runs low, so the stream stays smooth instead of stuttering. Turn off for a mains-powered camera that needs a predictable bitrate.</string>
+    <string name="adaptive_quality_note_pre_q">This device runs Android %1$s, which has no thermal API. Only the low-battery half of this setting applies.</string>
 </resources>

@@ -349,6 +349,27 @@ object AppPreferences {
             .apply()
     }
 
+    // --- Adaptive quality (advanced) ---
+    private const val KEY_ADAPTIVE_QUALITY = "adaptive_quality_enabled"
+
+    /**
+     * Whether the stream steps down when the device overheats or the battery runs low.
+     *
+     * On by default. A phone streaming 1080p30 with the screen off is a sustained load
+     * most handsets cannot hold indefinitely, and when the SoC throttles on its own the
+     * encoder starts missing deadlines and the stream stutters in a way that looks like
+     * a network fault. Backing off first keeps a lower-quality stream running smoothly.
+     *
+     * Off is a legitimate choice for a mains-powered camera feeding an NVR, where a
+     * predictable bitrate matters more than the handset's comfort.
+     */
+    fun getAdaptiveQualityEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ADAPTIVE_QUALITY, true)
+
+    fun setAdaptiveQualityEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ADAPTIVE_QUALITY, enabled).apply()
+    }
+
     // --- Advanced settings ---
     private const val KEY_ADVANCED_UNLOCKED = "advanced_unlocked"
 
@@ -387,6 +408,7 @@ object AppPreferences {
         KEY_ENCODER_IMPLEMENTATION,
         KEY_BITRATE_KBPS,
         KEY_VIDEO_FPS,
-        KEY_KEYFRAME_INTERVAL_SECONDS
+        KEY_KEYFRAME_INTERVAL_SECONDS,
+        KEY_ADAPTIVE_QUALITY
     )
 }

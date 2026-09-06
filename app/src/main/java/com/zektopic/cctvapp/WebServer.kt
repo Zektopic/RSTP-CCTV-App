@@ -39,6 +39,13 @@ class WebServer(
     private val getActiveEncoderImplementation: () -> String,
     /** Pre-rendered JSON object of what this device can encode. */
     private val getCodecSupportJson: () -> String,
+    private val getAdaptiveQualityEnabled: () -> Boolean,
+    /** PowerManager.THERMAL_STATUS_*; always 0 below API 29. */
+    private val getThermalStatus: () -> Int,
+    /** Percent of the configured bitrate currently in use; 100 when unrestricted. */
+    private val getQualityScalePercent: () -> Int,
+    /** NONE, THERMAL or BATTERY. */
+    private val getQualityTrigger: () -> String,
     /** Hand-pinned bitrate in kbit/s, or 0 for auto. */
     private val getBitrateKbps: () -> Int,
     /** What the encoder was actually prepared with, which is what auto resolved to. */
@@ -259,6 +266,10 @@ class WebServer(
                 "encoderImplementation":"${getEncoderImplementation()}",
                 "activeEncoderImplementation":"${getActiveEncoderImplementation()}",
                 "codecSupport":${getCodecSupportJson()},
+                "adaptiveQualityEnabled":${getAdaptiveQualityEnabled()},
+                "thermalStatus":${getThermalStatus()},
+                "qualityScalePercent":${getQualityScalePercent()},
+                "qualityTrigger":"${getQualityTrigger()}",
                 "bitrateKbps":${getBitrateKbps()},
                 "activeBitrateKbps":${getActiveBitrateKbps()},
                 "videoFps":${getVideoFps()},
@@ -766,6 +777,16 @@ class WebServer(
                 </div>
             </div>
             <div class="setting-row">
+                <div>
+                    <span class="setting-label">Adapt to heat and battery</span>
+                    <div class="setting-sublabel" id="adaptiveSublabel">Step the bitrate down when the device overheats or the battery runs low</div>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" id="toggleAdaptive" onchange="setSetting('adaptive_quality_enabled', this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row">
                 <span class="setting-label">Show Preview</span>
                 <label class="toggle">
                     <input type="checkbox" id="togglePreview" onchange="setSetting('show_preview', this.checked)">
@@ -1044,6 +1065,15 @@ class WebServer(
                             : 'Which MediaCodec implementation to encode with';
                     document.getElementById('codecSupportText').textContent =
                         describeCodecSupport(data.codecSupport);
+                    document.getElementById('toggleAdaptive').checked = data.adaptiveQualityEnabled;
+                    // When the policy is actually holding the stream back, say so here
+                    // rather than leaving the user to wonder why the bitrate they picked
+                    // is not the bitrate they are getting.
+                    document.getElementById('adaptiveSublabel').textContent =
+                        data.qualityScalePercent < 100
+                            ? 'Active: ' + data.qualityTrigger.toLowerCase() +
+                              ' — running at ' + data.qualityScalePercent + '% of the configured bitrate'
+                            : 'Step the bitrate down when the device overheats or the battery runs low';
                     document.getElementById('bitrateSelect').value = data.bitrateKbps;
                     document.getElementById('fpsSelect').value = data.videoFps;
                     document.getElementById('keyframeSelect').value = data.keyframeIntervalSeconds;

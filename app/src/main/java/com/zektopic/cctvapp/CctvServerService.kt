@@ -23,6 +23,7 @@ import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
+import android.os.PowerManager
 import android.os.IBinder
 import android.os.Looper
 import android.view.Gravity
@@ -54,6 +55,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         private const val ACTIVE_SNAPSHOT_INTERVAL_MS = 500L
         /** Heartbeat while nothing needs frames -- just enough to notice a new viewer. */
         private const val IDLE_SNAPSHOT_INTERVAL_MS = 3000L
+        /** How often the thermal/battery policy is re-evaluated. */
+        private const val ADAPTIVE_REEVALUATION_INTERVAL_MS = 60_000L
+
         /** How long after the last /shot.jpg we keep treating a viewer as present. */
         private const val VIEWER_IDLE_TIMEOUT_MS = 10_000L
 
@@ -95,6 +99,12 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
     @Volatile private var keyframeIntervalSeconds = EncoderProfile.DEFAULT_KEYFRAME_INTERVAL_SECONDS
     /** The bitrate the encoder was last prepared with, for /status. */
     @Volatile private var activeBitrateKbps = 0
+    @Volatile private var adaptiveQualityEnabled = true
+    /** The most recent thermal reading; always NONE below API 29, which has no API. */
+    @Volatile private var thermalStatus = AdaptiveQuality.THERMAL_NONE
+    /** What the adaptive policy last decided, surfaced in /status so the UI can say why. */
+    @Volatile private var qualityPlan = AdaptiveQuality.UNRESTRICTED
+    private var powerManager: PowerManager? = null
     /**
      * What was actually asked of the encoder, which differs from
      * [encoderImplementation] when the device has no encoder of the requested kind.
@@ -152,6 +162,22 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             timestampHandler.postDelayed(this, 1000)
         }
     }
+    private val adaptiveHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * Re-checks the adaptive policy periodically.
+     *
+     * Thermal changes arrive by callback, but battery level does not, and polling it on
+     * the snapshot tick would mean a BatteryManager read twice a second forever. Once a
+     * minute is far more often than a battery percentage meaningfully moves.
+     */
+    private val adaptiveRunnable = object : Runnable {
+        override fun run() {
+            applyAdaptiveQuality()
+            adaptiveHandler.postDelayed(this, ADAPTIVE_REEVALUATION_INTERVAL_MS)
+        }
+    }
+
     private val currentSnapshot = AtomicReference<ByteArray>(null)
     private val detectionExecutor = Executors.newSingleThreadExecutor()
     /** Separate from [detectionExecutor]: captioning is slow and must not stall detection. */
@@ -176,11 +202,20 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             // watching the dashboard; otherwise idle at a slow heartbeat.
             val viewerActive =
                 System.currentTimeMillis() - lastSnapshotRequestMs < VIEWER_IDLE_TIMEOUT_MS
+            // Under real thermal or battery pressure, drop to the idle cadence even
+            // when something wants frames. This loop is the comment above's "single
+            // biggest battery cost", so it is the first thing worth giving up.
+            val throttled = qualityPlan.throttleCapture
             val wanted = streaming && (detectionEnabled || viewerActive)
 
             if (wanted) takeSnapshot()
 
-            snapshotHandler.postDelayed(this, if (wanted) ACTIVE_SNAPSHOT_INTERVAL_MS else IDLE_SNAPSHOT_INTERVAL_MS)
+            val interval = when {
+                !wanted -> IDLE_SNAPSHOT_INTERVAL_MS
+                throttled -> IDLE_SNAPSHOT_INTERVAL_MS
+                else -> ACTIVE_SNAPSHOT_INTERVAL_MS
+            }
+            snapshotHandler.postDelayed(this, interval)
         }
     }
 
@@ -199,6 +234,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         videoWidth = AppPreferences.getVideoWidth(this)
         videoHeight = AppPreferences.getVideoHeight(this)
         encoderImplementation = AppPreferences.getEncoderImplementation(this)
+        adaptiveQualityEnabled = AppPreferences.getAdaptiveQualityEnabled(this)
+        startThermalMonitoring()
         codecSupport = CodecCapabilities.probe()
         android.util.Log.d("CctvServerService", "Encoder support: $codecSupport")
         bitrateKbps = AppPreferences.getBitrateKbps(this)
@@ -366,6 +403,13 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                         encoderImplementation = AppPreferences.getEncoderImplementation(this)
                         onMain { restartStreamIfRunning() }
                     }
+                    "adaptive_quality_enabled" -> {
+                        adaptiveQualityEnabled = value.toBoolean()
+                        AppPreferences.setAdaptiveQualityEnabled(this, adaptiveQualityEnabled)
+                        // Takes effect without a restart: the bitrate is adjusted on the
+                        // fly, so turning this off simply restores the configured value.
+                        onMain { applyAdaptiveQuality() }
+                    }
                     "encoder_implementation" -> {
                         AppPreferences.setEncoderImplementation(
                             this,
@@ -451,6 +495,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             getEncoderImplementation = { encoderImplementation.storedValue },
             getActiveEncoderImplementation = { activeEncoderImplementation.storedValue },
             getCodecSupportJson = { CodecCapabilities.toJson(codecSupport) },
+            getAdaptiveQualityEnabled = { adaptiveQualityEnabled },
+            getThermalStatus = { thermalStatus },
+            getQualityScalePercent = { qualityPlan.bitrateScalePercent },
+            getQualityTrigger = { qualityPlan.trigger.name },
             getBitrateKbps = { bitrateKbps },
             getActiveBitrateKbps = { activeBitrateKbps },
             getVideoFps = { videoFps },
@@ -492,6 +540,111 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         webServer.start()
         snapshotHandler.post(snapshotRunnable)
         retentionHandler.post(retentionRunnable)
+        adaptiveHandler.post(adaptiveRunnable)
+    }
+
+    /**
+     * Starts listening for thermal changes, where the platform supports it.
+     *
+     * `addThermalStatusListener` is API 29+ and minSdk here is 24, so on older devices
+     * this is a documented no-op: [thermalStatus] stays NONE and only the battery half
+     * of [AdaptiveQuality] ever fires. That is why the two conditions are evaluated
+     * independently rather than as one combined score.
+     */
+    private fun startThermalMonitoring() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val manager = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        powerManager = manager
+        try {
+            thermalStatus = manager.currentThermalStatus
+            manager.addThermalStatusListener(thermalListener)
+        } catch (e: Exception) {
+            // Some vendor builds throw here rather than reporting NONE. A camera server
+            // must not fail to start because it could not subscribe to a thermal feed.
+            android.util.Log.w("CctvServerService", "Thermal monitoring unavailable", e)
+        }
+    }
+
+    /** Callbacks arrive on the main thread, which is where the encoder must be touched. */
+    private val thermalListener = PowerManager.OnThermalStatusChangedListener { status ->
+        thermalStatus = status
+        android.util.Log.d("CctvServerService", "Thermal status: $status")
+        applyAdaptiveQuality()
+    }
+
+    private fun stopThermalMonitoring() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        try {
+            powerManager?.removeThermalStatusListener(thermalListener)
+        } catch (e: Exception) {
+            android.util.Log.w("CctvServerService", "Could not remove thermal listener", e)
+        }
+        powerManager = null
+    }
+
+    /**
+     * Re-evaluates the adaptive policy and applies it to a running stream.
+     *
+     * Uses `setVideoBitrateOnFly` rather than re-preparing the encoder. A restart would
+     * drop every connected RTSP client, which is the opposite of what a viewer wants at
+     * the moment the device is struggling.
+     */
+    private fun applyAdaptiveQuality() {
+        val plan = if (adaptiveQualityEnabled) {
+            AdaptiveQuality.plan(
+                thermalStatus = thermalStatus,
+                batteryPercent = getBatteryLevel(),
+                charging = isCharging()
+            )
+        } else {
+            AdaptiveQuality.UNRESTRICTED
+        }
+
+        val previous = qualityPlan
+        qualityPlan = plan
+        if (plan == previous) return
+
+        if (!::rtspServerCamera.isInitialized || !rtspServerCamera.isStreaming) return
+        if (activeBitrateKbps <= 0) return
+
+        // activeBitrateKbps is what the encoder was prepared with, i.e. the unscaled
+        // configured value, so successive plans scale from the same base rather than
+        // compounding on each other.
+        val target = AdaptiveQuality.scaleBitrateKbps(activeBitrateKbps, plan)
+        try {
+            rtspServerCamera.setVideoBitrateOnFly(EncoderProfile.kbpsToBps(target))
+            android.util.Log.d(
+                "CctvServerService",
+                "Adaptive quality: ${plan.trigger} ${plan.bitrateScalePercent}% -> $target kbit/s"
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("CctvServerService", "Could not adjust bitrate on the fly", e)
+        }
+    }
+
+    /**
+     * Re-applies the current plan to a freshly started stream.
+     *
+     * [applyAdaptiveQuality] short-circuits when the plan has not changed, which is
+     * exactly the case here -- the plan is the same, but the encoder underneath it is
+     * new and back at its configured bitrate. Clearing the remembered plan first forces
+     * the scale to be pushed again.
+     */
+    private fun reapplyAdaptiveQualityAfterStart() {
+        qualityPlan = AdaptiveQuality.UNRESTRICTED
+        applyAdaptiveQuality()
+    }
+
+    /**
+     * Whether the device is on power.
+     *
+     * A permanently plugged-in phone is the normal deployment for this app, so a low
+     * battery reading taken while it charges must not degrade the stream.
+     */
+    private fun isCharging(): Boolean {
+        val batteryManager = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+            ?: return false
+        return batteryManager.isCharging
     }
 
     /**
@@ -963,6 +1116,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                     applyTimestampOverlay()
                     activeCodec = videoCodec
                     activeBitrateKbps = resolvedKbps
+                    // prepareVideo resets the encoder to its configured bitrate, so a
+                    // stream started while the device is already hot must be scaled
+                    // straight away rather than waiting for the next thermal callback.
+                    reapplyAdaptiveQualityAfterStart()
                 } else {
                     android.util.Log.w("CctvServerService", "Codec $selectedCodec preparation failed, falling back to H264")
                     rtspServerCamera.setVideoCodec(VideoCodec.H264)
@@ -990,6 +1147,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                          // is perfectly capable of honouring on the next attempt.
                          activeCodec = "H264"
                          activeBitrateKbps = fallbackKbps
+                         reapplyAdaptiveQualityAfterStart()
                     } else {
                          // Nothing is streaming, so stop reporting a bitrate as though
                          // something were. /status feeds the dashboard's "currently N
@@ -1145,6 +1303,8 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
 
     private fun updateNightModeSensor() {
         sensorManager?.unregisterListener(lightSensorListener)
+        adaptiveHandler.removeCallbacks(adaptiveRunnable)
+        stopThermalMonitoring()
         if (nightModeEnabled && lightSensor != null) {
             sensorManager?.registerListener(
                 lightSensorListener,
