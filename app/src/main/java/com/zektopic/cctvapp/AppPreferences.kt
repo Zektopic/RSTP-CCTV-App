@@ -43,12 +43,41 @@ object AppPreferences {
             .apply()
     }
 
-    // --- Force Software Codec ---
+    // --- Encoder implementation ---
+    private const val KEY_ENCODER_IMPLEMENTATION = "encoder_implementation"
+
+    /**
+     * Which MediaCodec implementation to build the encoder from.
+     *
+     * Installs that predate this setting have only the old `force_software` boolean, so
+     * it is read as the fallback. That keeps a user who had turned the switch on still
+     * on the software encoder, and everyone else on the search they had before.
+     */
+    fun getEncoderImplementation(context: Context): EncoderImplementation {
+        val preferences = prefs(context)
+        val stored = preferences.getString(KEY_ENCODER_IMPLEMENTATION, null)
+        if (stored != null) return EncoderImplementation.fromStored(stored)
+        return EncoderImplementation.fromLegacyForceSoftware(
+            preferences.getBoolean(KEY_FORCE_SOFTWARE, false)
+        )
+    }
+
+    fun setEncoderImplementation(context: Context, implementation: EncoderImplementation) {
+        prefs(context).edit()
+            .putString(KEY_ENCODER_IMPLEMENTATION, implementation.storedValue)
+            // Keep the retired flag consistent rather than stale. The dashboard's
+            // /status still reports forceSoftware for existing NVR scripts, and a
+            // contradiction between the two would be worse than carrying the key.
+            .putBoolean(KEY_FORCE_SOFTWARE, implementation == EncoderImplementation.SOFTWARE)
+            .apply()
+    }
+
+    /** Retained for /status and the legacy `force_software` dashboard key. */
     fun getForceSoftware(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_FORCE_SOFTWARE, false)
+        getEncoderImplementation(context) == EncoderImplementation.SOFTWARE
 
     fun setForceSoftware(context: Context, force: Boolean) {
-        prefs(context).edit().putBoolean(KEY_FORCE_SOFTWARE, force).apply()
+        setEncoderImplementation(context, EncoderImplementation.fromLegacyForceSoftware(force))
     }
 
     // --- Show Preview ---
@@ -355,6 +384,7 @@ object AppPreferences {
      */
     private val ADVANCED_KEYS = listOf(
         KEY_FORCE_SOFTWARE,
+        KEY_ENCODER_IMPLEMENTATION,
         KEY_BITRATE_KBPS,
         KEY_VIDEO_FPS,
         KEY_KEYFRAME_INTERVAL_SECONDS
