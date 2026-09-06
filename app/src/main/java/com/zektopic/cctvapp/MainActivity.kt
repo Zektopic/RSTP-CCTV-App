@@ -52,6 +52,9 @@ class MainActivity : AppCompatActivity() {
     private val overlayPositions = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
     private val overlaySizes = arrayOf("Small", "Medium", "Large")
 
+    /** Encoder implementations, in the order the picker shows them. */
+    private val encoderImplementations = EncoderImplementation.entries.toList()
+
     /**
      * Bitrate choices for the advanced picker, in kbit/s.
      *
@@ -154,9 +157,11 @@ class MainActivity : AppCompatActivity() {
      * another stream restart for each one.
      */
     private fun loadAdvancedSettings() {
-        binding.switchForceSoftware.setOnCheckedChangeListener(null)
-        binding.switchForceSoftware.isChecked = AppPreferences.getForceSoftware(this)
-        binding.switchForceSoftware.setOnCheckedChangeListener(forceSoftwareListener)
+        (binding.spinnerEncoderImpl as? AutoCompleteTextView)?.setText(
+            getString(encoderImplementationLabel(AppPreferences.getEncoderImplementation(this))),
+            false
+        )
+        updateCodecSupportLabel()
 
         val bitrate = AppPreferences.getBitrateKbps(this)
         (binding.spinnerBitrate as? AutoCompleteTextView)?.setText(bitrateLabel(bitrate), false)
@@ -172,6 +177,33 @@ class MainActivity : AppCompatActivity() {
         binding.sliderKeyframe.value = keyframe.toFloat()
         binding.sliderKeyframe.addOnChangeListener(keyframeListener)
         binding.labelKeyframe.text = getString(R.string.encoder_keyframe_label, keyframe)
+    }
+
+    /**
+     * Tells the user what this device can actually encode.
+     *
+     * The codec picker offers H.264, H.265 and AV1 everywhere, but most hardware has no
+     * AV1 encoder at all -- and choosing it there just made the stream fall back to
+     * H.264, with nothing on screen to explain why the setting appeared not to stick.
+     *
+     * The probe is a MediaCodecList enumeration that takes single-digit milliseconds and
+     * runs only when the section is populated, so it stays on the main thread.
+     */
+    private fun updateCodecSupportLabel() {
+        val support = CodecCapabilities.probe()
+        val described = support.entries.joinToString(", ") { (codec, codecSupport) ->
+            val how = when {
+                codecSupport.hardware && codecSupport.software -> R.string.codec_support_both
+                codecSupport.hardware -> R.string.codec_support_hardware
+                codecSupport.software -> R.string.codec_support_software
+                else -> R.string.codec_support_none
+            }
+            getString(R.string.codec_support_entry, codec, getString(how))
+        }
+        binding.labelCodecSupport.text = getString(
+            R.string.codec_support_label,
+            described.ifEmpty { getString(R.string.codec_support_unknown) }
+        )
     }
 
     /**
@@ -239,6 +271,14 @@ class MainActivity : AppCompatActivity() {
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, overlaySizes)
         )
 
+        (binding.spinnerEncoderImpl as? AutoCompleteTextView)?.setAdapter(
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                encoderImplementations.map { getString(encoderImplementationLabel(it)) }
+            )
+        )
+
         (binding.spinnerBitrate as? AutoCompleteTextView)?.setAdapter(
             ArrayAdapter(
                 this,
@@ -255,6 +295,14 @@ class MainActivity : AppCompatActivity() {
             )
         )
     }
+
+    private fun encoderImplementationLabel(implementation: EncoderImplementation): Int =
+        when (implementation) {
+            EncoderImplementation.AUTO -> R.string.encoder_impl_auto
+            EncoderImplementation.HARDWARE -> R.string.encoder_impl_hardware
+            EncoderImplementation.SOFTWARE -> R.string.encoder_impl_software
+            EncoderImplementation.CBR_PRIORITY -> R.string.encoder_impl_cbr
+        }
 
     private fun bitrateLabel(kbps: Int): String =
         if (kbps == AppPreferences.BITRATE_AUTO) {
@@ -279,7 +327,6 @@ class MainActivity : AppCompatActivity() {
         )
 
         // Load saved toggles
-        binding.switchForceSoftware.isChecked = AppPreferences.getForceSoftware(this)
         binding.switchPreview.isChecked = AppPreferences.getShowPreview(this)
 
         // Load saved auth settings
@@ -341,17 +388,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-    /**
-     * Held as a field rather than a lambda at the call site: "Reset advanced settings"
-     * writes the switch back to its default, and doing that with the listener still
-     * attached would fire another save and another stream restart.
-     */
-    private val forceSoftwareListener =
-        android.widget.CompoundButton.OnCheckedChangeListener { _, isChecked ->
-            AppPreferences.setForceSoftware(this, isChecked)
-            restartServer()
-        }
-
     private fun setupListeners() {
         binding.switchServer.setOnCheckedChangeListener(serverSwitchListener)
 
@@ -372,7 +408,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.switchForceSoftware.setOnCheckedChangeListener(forceSoftwareListener)
+        (binding.spinnerEncoderImpl as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
+            AppPreferences.setEncoderImplementation(this, encoderImplementations[position])
+            // Which implementations are usable depends on the codec, so the support
+            // line under the picker can change meaning with this choice.
+            updateCodecSupportLabel()
+            restartServer()
+        }
 
         (binding.spinnerBitrate as? AutoCompleteTextView)?.setOnItemClickListener { _, _, position, _ ->
             val kbps = bitrateChoicesKbps[position]
@@ -583,7 +625,6 @@ class MainActivity : AppCompatActivity() {
         val (width, height) = getSelectedResolution()
         val intent = Intent(this, CctvServerService::class.java).apply {
             putExtra("video_codec", binding.spinnerCodec.text.toString())
-            putExtra("force_software", binding.switchForceSoftware.isChecked)
             putExtra("show_preview", binding.switchPreview.isChecked)
             putExtra("width", width)
             putExtra("height", height)

@@ -32,7 +32,13 @@ class WebServer(
     private val getTimestampSize: () -> String,
     private val getFlashlightEnabled: () -> Boolean,
     private val getNightModeEnabled: () -> Boolean,
+    /** Retained for dashboards and NVR scripts written against the old boolean. */
     private val getForceSoftware: () -> Boolean,
+    private val getEncoderImplementation: () -> String,
+    /** What the encoder was actually built with, after any device-capability fallback. */
+    private val getActiveEncoderImplementation: () -> String,
+    /** Pre-rendered JSON object of what this device can encode. */
+    private val getCodecSupportJson: () -> String,
     /** Hand-pinned bitrate in kbit/s, or 0 for auto. */
     private val getBitrateKbps: () -> Int,
     /** What the encoder was actually prepared with, which is what auto resolved to. */
@@ -250,6 +256,9 @@ class WebServer(
                 "flashlightEnabled":${getFlashlightEnabled()},
                 "nightModeEnabled":${getNightModeEnabled()},
                 "forceSoftware":${getForceSoftware()},
+                "encoderImplementation":"${getEncoderImplementation()}",
+                "activeEncoderImplementation":"${getActiveEncoderImplementation()}",
+                "codecSupport":${getCodecSupportJson()},
                 "bitrateKbps":${getBitrateKbps()},
                 "activeBitrateKbps":${getActiveBitrateKbps()},
                 "videoFps":${getVideoFps()},
@@ -738,13 +747,23 @@ class WebServer(
             </div>
             <div class="setting-row">
                 <div>
-                    <span class="setting-label">Force Software Codec</span>
-                    <div class="setting-sublabel">Use software encoder instead of hardware</div>
+                    <span class="setting-label">Encoder</span>
+                    <div class="setting-sublabel" id="encoderSublabel">Auto</div>
                 </div>
-                <label class="toggle">
-                    <input type="checkbox" id="toggleForceSoftware" onchange="setSetting('force_software', this.checked)">
-                    <span class="toggle-track"></span>
-                </label>
+                <div class="select-wrap">
+                    <select id="encoderSelect" onchange="setSetting('encoder_implementation', this.value)">
+                        <option value="auto">Auto</option>
+                        <option value="hardware">Hardware</option>
+                        <option value="software">Software</option>
+                        <option value="cbr">Constant bitrate</option>
+                    </select>
+                </div>
+            </div>
+            <div class="setting-row">
+                <div>
+                    <span class="setting-label">This device encodes</span>
+                    <div class="setting-sublabel" id="codecSupportText">Checking…</div>
+                </div>
             </div>
             <div class="setting-row">
                 <span class="setting-label">Show Preview</span>
@@ -1014,7 +1033,17 @@ class WebServer(
                     document.getElementById('resSelect').value = data.resolution;
                     
                     // Sync toggles
-                    document.getElementById('toggleForceSoftware').checked = data.forceSoftware;
+                    document.getElementById('encoderSelect').value = data.encoderImplementation;
+                    // Say so when the device had no encoder of the requested kind and
+                    // the service quietly used Auto instead -- otherwise the setting
+                    // looks like it simply did not apply.
+                    document.getElementById('encoderSublabel').textContent =
+                        data.activeEncoderImplementation &&
+                        data.activeEncoderImplementation !== data.encoderImplementation
+                            ? 'Not available for this codec — using ' + data.activeEncoderImplementation
+                            : 'Which MediaCodec implementation to encode with';
+                    document.getElementById('codecSupportText').textContent =
+                        describeCodecSupport(data.codecSupport);
                     document.getElementById('bitrateSelect').value = data.bitrateKbps;
                     document.getElementById('fpsSelect').value = data.videoFps;
                     document.getElementById('keyframeSelect').value = data.keyframeIntervalSeconds;
@@ -1087,6 +1116,21 @@ class WebServer(
                 .then(() => { showToast(v === '0x0' ? 'Resolution: Max' : 'Resolution: ' + v); fetchStatus(); });
         }
         
+        // Renders the probe as "H.264 hardware, H.265 software, AV1 none" so a user
+        // choosing a codec can see why one of them will not stick on this handset.
+        function describeCodecSupport(support) {
+            if (!support) return 'Unknown';
+            const names = { H264: 'H.264', H265: 'H.265', AV1: 'AV1' };
+            return Object.keys(support).map(function (codec) {
+                const s = support[codec];
+                let how = 'none';
+                if (s.hardware && s.software) how = 'hardware + software';
+                else if (s.hardware) how = 'hardware';
+                else if (s.software) how = 'software';
+                return (names[codec] || codec) + ' ' + how;
+            }).join(', ');
+        }
+
         function setSetting(key, value) {
             fetch('/action/set-setting?key=' + encodeURIComponent(key) + '&value=' + encodeURIComponent(value), POST)
                 .then(() => { showToast(key.replace(/_/g, ' ') + ': ' + value); fetchStatus(); });

@@ -3,7 +3,6 @@
     <string name="cctv_server_title">CCTV Server</string>
     <string name="enable_server">Enable Server</string>
     <string name="video_codec">Video Codec</string>
-    <string name="force_software_codec">Force Software Codec</string>
     <string name="resolution">Resolution</string>
     <string name="switch_camera">Switch Camera</string>
     <string name="show_preview">Show Preview</string>
@@ -106,7 +105,6 @@
         <item quantity="other">%1$d taps away from the advanced settings</item>
     </plurals>
     <string name="version_row">Version %1$s</string>
-    <string name="force_software_codec_summary">Use the device\'s software encoder instead of the hardware one. Slower and hotter, but a way out when a hardware encoder produces a broken stream.</string>
     <!-- Encoder tuning -->
     <string name="encoder_bitrate">Bitrate</string>
     <string name="encoder_bitrate_auto">Auto</string>
@@ -119,4 +117,20 @@
     <string name="encoder_keyframe">Keyframe interval</string>
     <string name="encoder_keyframe_summary">Shorter means players start faster and recover from packet loss sooner, at a bandwidth cost. 2 seconds is the default.</string>
     <string name="encoder_keyframe_label">Keyframe interval: %1$d s</string>
+    <!-- Encoder implementation -->
+    <string name="encoder_implementation">Encoder</string>
+    <string name="encoder_implementation_summary">Which MediaCodec implementation to encode with. Auto takes the first that works, and is what the app has always done.</string>
+    <string name="encoder_impl_auto">Auto</string>
+    <string name="encoder_impl_hardware">Hardware</string>
+    <string name="encoder_impl_software">Software</string>
+    <string name="encoder_impl_cbr">Constant bitrate</string>
+    <string name="encoder_impl_fallback">Not available for the selected codec on this device — the stream will use Auto.</string>
+    <string name="codec_support_title">This device encodes</string>
+    <string name="codec_support_unknown">Unknown</string>
+    <string name="codec_support_none">none</string>
+    <string name="codec_support_hardware">hardware</string>
+    <string name="codec_support_software">software</string>
+    <string name="codec_support_both">hardware + software</string>
+    <string name="codec_support_entry">%1$s %2$s</string>
+    <string name="codec_support_label">This device encodes: %1$s</string>
 </resources>

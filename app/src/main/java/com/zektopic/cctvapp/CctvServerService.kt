@@ -81,13 +81,25 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
      * show the truth without destroying the user's stored preference.
      */
     @Volatile private var activeCodec = "H264"
-    @Volatile private var forceSoftware = false
+    @Volatile private var encoderImplementation = EncoderImplementation.DEFAULT
+    /**
+     * What this device can actually encode.
+     *
+     * Probed once when the service starts rather than per request: enumerating
+     * MediaCodecList is not free and the answer cannot change while the app is running.
+     */
+    @Volatile private var codecSupport: Map<String, CodecSupport> = emptyMap()
     /** Hand-pinned bitrate in kbit/s, or [AppPreferences.BITRATE_AUTO]. */
     @Volatile private var bitrateKbps = AppPreferences.BITRATE_AUTO
     @Volatile private var videoFps = EncoderProfile.DEFAULT_FPS
     @Volatile private var keyframeIntervalSeconds = EncoderProfile.DEFAULT_KEYFRAME_INTERVAL_SECONDS
     /** The bitrate the encoder was last prepared with, for /status. */
     @Volatile private var activeBitrateKbps = 0
+    /**
+     * What was actually asked of the encoder, which differs from
+     * [encoderImplementation] when the device has no encoder of the requested kind.
+     */
+    @Volatile private var activeEncoderImplementation = EncoderImplementation.DEFAULT
     @Volatile private var showPreview = false
     @Volatile private var authEnabled = false
     @Volatile private var authUsername = ""
@@ -186,7 +198,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         videoCodec = AppPreferences.getVideoCodec(this)
         videoWidth = AppPreferences.getVideoWidth(this)
         videoHeight = AppPreferences.getVideoHeight(this)
-        forceSoftware = AppPreferences.getForceSoftware(this)
+        encoderImplementation = AppPreferences.getEncoderImplementation(this)
+        codecSupport = CodecCapabilities.probe()
+        android.util.Log.d("CctvServerService", "Encoder support: $codecSupport")
         bitrateKbps = AppPreferences.getBitrateKbps(this)
         videoFps = AppPreferences.getVideoFps(this)
         keyframeIntervalSeconds = AppPreferences.getKeyframeIntervalSeconds(this)
@@ -344,9 +358,20 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                         AppPreferences.setNightModeEnabled(this, nightModeEnabled)
                         onMain { updateNightModeSensor() }
                     }
+                    // Legacy key. Still accepted because NVR setups and scripts built
+                    // against the old dashboard send it, and silently ignoring it would
+                    // break them with no error to go on.
                     "force_software" -> {
-                        forceSoftware = value.toBoolean()
-                        AppPreferences.setForceSoftware(this, forceSoftware)
+                        AppPreferences.setForceSoftware(this, value.toBoolean())
+                        encoderImplementation = AppPreferences.getEncoderImplementation(this)
+                        onMain { restartStreamIfRunning() }
+                    }
+                    "encoder_implementation" -> {
+                        AppPreferences.setEncoderImplementation(
+                            this,
+                            EncoderImplementation.fromStored(value)
+                        )
+                        encoderImplementation = AppPreferences.getEncoderImplementation(this)
                         onMain { restartStreamIfRunning() }
                     }
                     // Encoder tuning. Each of these can only take effect by preparing
@@ -422,7 +447,10 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             getTimestampSize = { timestampSize },
             getFlashlightEnabled = { flashlightEnabled },
             getNightModeEnabled = { nightModeEnabled },
-            getForceSoftware = { forceSoftware },
+            getForceSoftware = { encoderImplementation == EncoderImplementation.SOFTWARE },
+            getEncoderImplementation = { encoderImplementation.storedValue },
+            getActiveEncoderImplementation = { activeEncoderImplementation.storedValue },
+            getCodecSupportJson = { CodecCapabilities.toJson(codecSupport) },
             getBitrateKbps = { bitrateKbps },
             getActiveBitrateKbps = { activeBitrateKbps },
             getVideoFps = { videoFps },
@@ -465,6 +493,20 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         snapshotHandler.post(snapshotRunnable)
         retentionHandler.post(retentionRunnable)
     }
+
+    /**
+     * Maps to RootEncoder's enum.
+     *
+     * The `when` is exhaustive over [EncoderImplementation], so adding a value there is
+     * a compile error here rather than a silent fall-through to FIRST_COMPATIBLE_FOUND.
+     */
+    private fun codecTypeFor(implementation: EncoderImplementation): CodecUtil.CodecType =
+        when (implementation) {
+            EncoderImplementation.AUTO -> CodecUtil.CodecType.FIRST_COMPATIBLE_FOUND
+            EncoderImplementation.HARDWARE -> CodecUtil.CodecType.HARDWARE
+            EncoderImplementation.SOFTWARE -> CodecUtil.CodecType.SOFTWARE
+            EncoderImplementation.CBR_PRIORITY -> CodecUtil.CodecType.CBR_PRIORITY
+        }
 
     /** Restarts an in-flight stream so a changed encoder setting takes effect. Main thread only. */
     private fun restartStreamIfRunning() {
@@ -689,7 +731,9 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         val newShowPreview = intent?.getBooleanExtra("show_preview", AppPreferences.getShowPreview(this)) ?: false
         val newWidth = intent?.getIntExtra("width", AppPreferences.getVideoWidth(this)) ?: 640
         val newHeight = intent?.getIntExtra("height", AppPreferences.getVideoHeight(this)) ?: 480
-        val newForceSoftware = intent?.getBooleanExtra("force_software", AppPreferences.getForceSoftware(this)) ?: false
+        // Read from preferences, not the Intent: the app persists the choice before
+        // asking for a restart, and the four-way setting no longer fits a boolean extra.
+        val newEncoderImplementation = AppPreferences.getEncoderImplementation(this)
         val newAuthEnabled = intent?.getBooleanExtra("auth_enabled", AppPreferences.getAuthEnabled(this)) ?: false
         val newAuthUsername = intent?.getStringExtra("auth_username") ?: AppPreferences.getUsername(this)
         val newAuthPassword = intent?.getStringExtra("auth_password") ?: AppPreferences.getPassword(this)
@@ -726,7 +770,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
             val encoderChanged = videoCodec != newVideoCodec ||
                 videoWidth != newWidth ||
                 videoHeight != newHeight ||
-                forceSoftware != newForceSoftware ||
+                encoderImplementation != newEncoderImplementation ||
                 bitrateKbps != newBitrateKbps ||
                 videoFps != newVideoFps ||
                 keyframeIntervalSeconds != newKeyframeIntervalSeconds
@@ -760,7 +804,7 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         videoCodec = newVideoCodec
         videoWidth = newWidth
         videoHeight = newHeight
-        forceSoftware = newForceSoftware
+        encoderImplementation = newEncoderImplementation
         bitrateKbps = newBitrateKbps
         videoFps = newVideoFps
         keyframeIntervalSeconds = newKeyframeIntervalSeconds
@@ -768,7 +812,6 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
         // Persist the settings
         AppPreferences.setVideoCodec(this, videoCodec)
         AppPreferences.setResolution(this, videoWidth, videoHeight)
-        AppPreferences.setForceSoftware(this, forceSoftware)
 
         // Update auth settings
         authEnabled = newAuthEnabled
@@ -872,15 +915,31 @@ class CctvServerService : Service(), ConnectChecker, SurfaceHolder.Callback {
                 rtspServerCamera.setVideoCodec(selectedCodec)
                 android.util.Log.d("CctvServerService", "Selected codec: $selectedCodec ($videoCodec)")
 
-                // The "Force Software Codec" switch was previously persisted and even
-                // restarted the stream, but was never applied to the encoder. Wire it to
-                // the API that actually selects the codec implementation.
-                val codecType = if (forceSoftware) {
-                    CodecUtil.CodecType.SOFTWARE
-                } else {
-                    CodecUtil.CodecType.FIRST_COMPATIBLE_FOUND
+                // The user's choice is only honoured if the device has that kind of
+                // encoder for this codec. Asking for HARDWARE on a device with only a
+                // software AV1 encoder would fail prepareVideo and drop the stream all
+                // the way to H.264, losing the codec as well as the implementation.
+                // Falling back to AUTO keeps the codec and gives up only the preference.
+                val support = codecSupport[videoCodec.uppercase()] ?: CodecSupport.NONE
+                val effectiveImplementation = when {
+                    support.supports(encoderImplementation) -> encoderImplementation
+                    support.available -> {
+                        android.util.Log.w(
+                            "CctvServerService",
+                            "No $encoderImplementation encoder for $videoCodec; using AUTO"
+                        )
+                        EncoderImplementation.AUTO
+                    }
+                    // Nothing known about this codec -- either it is genuinely
+                    // unsupported or the probe failed. Try the user's choice anyway
+                    // rather than pre-emptively overriding it; prepareVideo is the
+                    // authority and the existing fallback handles a refusal.
+                    else -> encoderImplementation
                 }
+
+                val codecType = codecTypeFor(effectiveImplementation)
                 rtspServerCamera.forceCodecType(codecType, codecType)
+                activeEncoderImplementation = effectiveImplementation
                 android.util.Log.d("CctvServerService", "Codec type: $codecType")
 
                 // Set authentication
